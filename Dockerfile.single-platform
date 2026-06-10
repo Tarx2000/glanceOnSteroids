@@ -1,6 +1,28 @@
+# Stage 1: Build stage using the official Go alpine image
+# This compiles the source code inside Docker to ensure consistency.
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /app
+
+# Cache dependency download step
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the entire source code into the builder container
+COPY . .
+
+# Compile the static Linux binary with the local BUILD_NUMBER
+RUN BUILD_NUM=$(cat BUILD_NUMBER) && \
+    CGO_ENABLED=0 go build \
+    -ldflags "-s -w -X github.com/glanceapp/glance/internal/glance.buildNumber=${BUILD_NUM}" \
+    -trimpath \
+    -o glance .
+
+# Stage 2: Final minimal running image
 FROM alpine:3.19
 
-COPY build/glance /usr/local/bin/glance
+# Copy the compiled binary from the builder stage
+COPY --from=builder /app/glance /usr/local/bin/glance
 
 RUN mkdir -p /data
 WORKDIR /data
