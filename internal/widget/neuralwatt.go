@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"math"
 	"time"
 
@@ -79,13 +80,18 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 	widget.TodayRequests = 0
 	widget.TodayTokens = 0
 	widget.TodayEnergyKwh = 0
+	computedTotalCost := 0.0
 	for _, d := range summary.TimeSeries {
+		computedTotalCost += d.CostUSD
 		if d.Date == today {
 			widget.TodayCost = d.CostUSD
 			widget.TodayRequests = d.Requests
 			widget.TodayTokens = d.TotalTokens
-			break
 		}
+	}
+	if computedTotalCost > 0 {
+		slog.Info("[NeuralWatt] cost comparison", "api_total", summary.Totals.TotalCostUSD, "computed_total", computedTotalCost, "api_period_start", summary.Period.Start, "api_period_end", summary.Period.End, "time_series_days", len(summary.TimeSeries))
+		widget.Summary.Totals.TotalCostUSD = computedTotalCost
 	}
 
 	if widget.Energy != nil {

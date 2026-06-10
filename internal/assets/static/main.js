@@ -64,11 +64,103 @@ function showToast(message, type = "info", duration = 5000) {
 }
 
 // ----------------------------------------------------
+// Styled Confirm/Prompt Modals (replaces native confirm/prompt)
+// ----------------------------------------------------
+
+function showConfirmModal(message) {
+    return new Promise(function(resolve) {
+        const overlay = document.createElement("div");
+        overlay.className = "confirm-modal-overlay";
+        const content = document.createElement("div");
+        content.className = "confirm-modal-content";
+        const msg = document.createElement("p");
+        msg.className = "confirm-modal-message";
+        msg.textContent = message;
+        const btns = document.createElement("div");
+        btns.className = "confirm-modal-buttons";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "confirm-modal-cancel";
+        cancelBtn.textContent = "Cancel";
+        const okBtn = document.createElement("button");
+        okBtn.className = "confirm-modal-ok";
+        okBtn.textContent = "OK";
+        btns.appendChild(cancelBtn);
+        btns.appendChild(okBtn);
+        content.appendChild(msg);
+        content.appendChild(btns);
+        overlay.appendChild(content);
+        document.body.appendChild(overlay);
+        setModalOpen(true);
+
+        function cleanup(result) {
+            overlay.remove();
+            setModalOpen(false);
+            resolve(result);
+        }
+
+        okBtn.addEventListener("click", function() { cleanup(true); });
+        cancelBtn.addEventListener("click", function() { cleanup(false); });
+        overlay.addEventListener("click", function(e) { if (e.target === overlay) cleanup(false); });
+    });
+}
+
+function showPromptModal(message, defaultValue) {
+    return new Promise(function(resolve) {
+        const overlay = document.createElement("div");
+        overlay.className = "confirm-modal-overlay";
+        const content = document.createElement("div");
+        content.className = "confirm-modal-content";
+        const msg = document.createElement("p");
+        msg.className = "confirm-modal-message";
+        msg.textContent = message;
+        const input = document.createElement("input");
+        input.className = "confirm-modal-input";
+        input.type = "text";
+        input.value = defaultValue || "";
+        input.enterKeyHint = "done";
+        const btns = document.createElement("div");
+        btns.className = "confirm-modal-buttons";
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "confirm-modal-cancel";
+        cancelBtn.textContent = "Cancel";
+        const okBtn = document.createElement("button");
+        okBtn.className = "confirm-modal-ok";
+        okBtn.textContent = "OK";
+        btns.appendChild(cancelBtn);
+        btns.appendChild(okBtn);
+        content.appendChild(msg);
+        content.appendChild(input);
+        content.appendChild(btns);
+        overlay.appendChild(content);
+        document.body.appendChild(overlay);
+        setModalOpen(true);
+        input.focus();
+
+        function cleanup(result) {
+            overlay.remove();
+            setModalOpen(false);
+            resolve(result);
+        }
+
+        okBtn.addEventListener("click", function() { cleanup(input.value.trim() || null); });
+        cancelBtn.addEventListener("click", function() { cleanup(null); });
+        input.addEventListener("keydown", function(e) { if (e.key === "Enter") { e.preventDefault(); cleanup(input.value.trim() || null); } });
+        overlay.addEventListener("click", function(e) { if (e.target === overlay) cleanup(null); });
+    });
+}
+
+// ----------------------------------------------------
 // Layout Editor Undo History
 // ----------------------------------------------------
 
 let layoutHistory = [];
 let historyIndex = -1;
+let draggedWidget = null;
+let placeholder = null;
+let dragGhost = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let dragPointerId = -1;
 
 function pushLayoutHistory() {
     const page = document.getElementById("page");
@@ -539,6 +631,7 @@ function toggleEditMode(active) {
         }
         enableWidgetsDraggability(true);
     } else {
+        cancelPointerDrag();
         body.classList.remove("layout-edit-mode");
         btnEdit.style.display = "block";
         btnAdd.style.display = "none";
@@ -553,7 +646,7 @@ function toggleEditMode(active) {
     }
 }
 
-// Configures HTML5 Drag & Drop states for both page columns and page header columns, including nested Group widgets
+// Configures drag handle and edit/delete actions for both page columns and page header columns, including nested Group widgets
 function enableWidgetsDraggability(enabled) {
     const headCol = document.querySelector(".page-column-head");
     const columns = document.querySelectorAll(".page-column");
@@ -577,8 +670,19 @@ function enableWidgetsDraggability(enabled) {
         }
 
         if (enabled) {
-            w.setAttribute("draggable", "true");
             w.classList.add("editable");
+
+            if (!w.querySelector(".widget-drag-handle")) {
+                const header = w.querySelector(".widget-header");
+                if (header) {
+                    const handle = document.createElement("div");
+                    handle.className = "widget-drag-handle";
+                    handle.title = "Drag to reorder";
+                    handle.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="16" viewBox="0 0 10 16" fill="currentColor" style="display:block;"><circle cx="2.5" cy="2.5" r="1.5"/><circle cx="7.5" cy="2.5" r="1.5"/><circle cx="2.5" cy="8" r="1.5"/><circle cx="7.5" cy="8" r="1.5"/><circle cx="2.5" cy="13.5" r="1.5"/><circle cx="7.5" cy="13.5" r="1.5"/></svg>';
+                    handle.addEventListener("pointerdown", function(e) { startPointerDrag(e, w); });
+                    header.insertBefore(handle, header.firstChild);
+                }
+            }
 
             // Inject a button container with Edit + Delete if not already present
             if (!w.querySelector(".widget-edit-actions")) {
@@ -617,7 +721,7 @@ function enableWidgetsDraggability(enabled) {
                         e.preventDefault();
                         const titleEl = w.querySelector(".uppercase");
                         const title = titleEl ? titleEl.innerText : "Widget";
-                        if (confirm(`Are you sure you want to delete the "${title}" widget?`)) {
+                        if (await showConfirmModal(`Are you sure you want to delete the "${title}" widget?`)) {
                             if (w.dataset.originalNestedIdx !== undefined) {
                                 await deleteWidget(`${w.dataset.originalCol}:${w.dataset.originalIdx}`, parseInt(w.dataset.originalNestedIdx));
                             } else {
@@ -632,11 +736,11 @@ function enableWidgetsDraggability(enabled) {
                 }
             }
         } else {
-            w.removeAttribute("draggable");
             w.classList.remove("editable");
-            // Remove the edit/delete actions container injected during edit mode
             const actionsDiv = w.querySelector(".widget-edit-actions");
             if (actionsDiv) actionsDiv.remove();
+            const handle = w.querySelector(".widget-drag-handle");
+            if (handle) handle.remove();
         }
     };
 
@@ -1244,7 +1348,7 @@ function setupHeaderControls() {
     const btnAddPage = document.getElementById("btn-add-page");
     if (btnAddPage) {
         btnAddPage.addEventListener("click", async () => {
-            const pageName = prompt("Enter a name for the new dashboard page:");
+            const pageName = await showPromptModal("Enter a name for the new dashboard page:");
             if (!pageName || !pageName.trim()) return;
 
             try {
@@ -1450,7 +1554,7 @@ function setupSettingsMenu() {
                 return;
             }
 
-            if (!confirm("Importing a config file will replace your current configuration entirely. Continue?")) {
+            if (!await showConfirmModal("Importing a config file will replace your current configuration entirely. Continue?")) {
                 importFile.value = "";
                 return;
             }
@@ -1876,65 +1980,114 @@ if (document.readyState === "loading") {
     setupPage();
 }
 
-// Globals for drag and drop
-let draggedWidget = null;
-let placeholder = null;
+// ----------------------------------------------------
+// Pointer Events-based Drag and Drop (works on touch + mouse)
+// ----------------------------------------------------
 
-// Document-level Drag and Drop Event Delegation
-document.addEventListener("dragstart", (e) => {
+function startPointerDrag(e, widget) {
     if (!document.body.classList.contains("layout-edit-mode")) return;
+    if (draggedWidget) return;
+    e.preventDefault();
 
-    const widget = e.target.closest(".widget");
-    if (!widget || widget.getAttribute("draggable") !== "true") return;
-
+    dragPointerId = e.pointerId;
     draggedWidget = widget;
-    
-    // Set dragging class after the browser has captured the drag ghost image
-    setTimeout(() => {
-        if (draggedWidget) draggedWidget.classList.add("dragging");
-    }, 0);
+    document.body.classList.add("is-dragging");
 
-    // Create the thin horizontal line insertion placeholder
+    const ghost = widget.cloneNode(true);
+    ghost.classList.add("widget-drag-ghost");
+    ghost.style.width = widget.offsetWidth + "px";
+    document.body.appendChild(ghost);
+    dragGhost = ghost;
+
+    const rect = widget.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+
+    ghost.style.left = (e.clientX - dragOffsetX) + "px";
+    ghost.style.top = (e.clientY - dragOffsetY) + "px";
+
+    widget.classList.add("dragging");
+
     placeholder = document.createElement("div");
     placeholder.className = "widget-placeholder";
+    widget.parentNode.insertBefore(placeholder, widget);
+}
 
-    e.dataTransfer.effectAllowed = "move";
-});
-
-document.addEventListener("dragend", (e) => {
-    if (!document.body.classList.contains("layout-edit-mode")) return;
-
-    if (draggedWidget) {
-        if (placeholder && placeholder.parentNode) {
-            placeholder.parentNode.insertBefore(draggedWidget, placeholder);
-            placeholder.remove();
-        }
-        draggedWidget.classList.remove("dragging");
-        draggedWidget = null;
-        placeholder = null;
-        pushLayoutHistory();
+function cancelPointerDrag() {
+    if (!draggedWidget) return;
+    document.body.classList.remove("is-dragging");
+    document.querySelectorAll(".page-column.drop-active, .page-column-head.drop-active, .widget-group.drop-active").forEach(function(el) { el.classList.remove("drop-active"); });
+    if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.insertBefore(draggedWidget, placeholder);
+        placeholder.remove();
     }
-});
+    draggedWidget.classList.remove("dragging");
+    if (dragGhost) { dragGhost.remove(); dragGhost = null; }
+    draggedWidget = null;
+    placeholder = null;
+    dragPointerId = -1;
+}
 
-document.addEventListener("dragover", (e) => {
-    if (!document.body.classList.contains("layout-edit-mode")) return;
-    if (!draggedWidget || !placeholder) return;
+document.addEventListener("pointermove", function(e) {
+    if (!draggedWidget || !dragGhost) return;
+    if (e.pointerId !== dragPointerId) return;
+    e.preventDefault();
 
-    // Target columns, page-column-head, or nested group widget-groups
-    const dropZone = e.target.closest(".widget-group, .page-column, .page-column-head");
+    dragGhost.style.left = (e.clientX - dragOffsetX) + "px";
+    dragGhost.style.top = (e.clientY - dragOffsetY) + "px";
+
+    var scrollThreshold = 60;
+    var scrollSpeed = 8;
+    if (e.clientY < scrollThreshold && e.clientY > 0) {
+        window.scrollBy(0, -scrollSpeed);
+    } else if (e.clientY > window.innerHeight - scrollThreshold && e.clientY < window.innerHeight) {
+        window.scrollBy(0, scrollSpeed);
+    }
+
+    dragGhost.style.display = "none";
+    var elementUnder = document.elementFromPoint(e.clientX, e.clientY);
+    dragGhost.style.display = "";
+
+    if (!elementUnder) return;
+
+    document.querySelectorAll(".page-column.drop-active, .page-column-head.drop-active, .widget-group.drop-active").forEach(function(el) { el.classList.remove("drop-active"); });
+
+    var dropZone = elementUnder.closest(".widget-group, .page-column, .page-column-head");
     if (!dropZone) return;
+    if (draggedWidget.contains(dropZone)) return;
 
-    e.preventDefault(); // Required to allow drop
-
-    // Prevent dropping a Group container inside itself
-    if (draggedWidget.contains(dropZone)) {
-        return;
-    }
-
-    const afterElement = getDragAfterElement(dropZone, e.clientY);
+    dropZone.classList.add("drop-active");
+    var afterElement = getDragAfterElement(dropZone, e.clientY);
     if (afterElement == null) {
         dropZone.appendChild(placeholder);
     } else {
         dropZone.insertBefore(placeholder, afterElement);
     }
+});
+
+document.addEventListener("pointerup", function(e) {
+    if (!draggedWidget) return;
+    if (e.pointerId !== dragPointerId) return;
+
+    document.body.classList.remove("is-dragging");
+    document.querySelectorAll(".page-column.drop-active, .page-column-head.drop-active, .widget-group.drop-active").forEach(function(el) { el.classList.remove("drop-active"); });
+
+    if (placeholder && placeholder.parentNode) {
+        placeholder.parentNode.insertBefore(draggedWidget, placeholder);
+        placeholder.remove();
+    }
+
+    draggedWidget.classList.remove("dragging");
+
+    if (dragGhost) { dragGhost.remove(); dragGhost = null; }
+
+    draggedWidget = null;
+    placeholder = null;
+    dragPointerId = -1;
+
+    pushLayoutHistory();
+});
+
+document.addEventListener("pointercancel", function() {
+    cancelPointerDrag();
 });

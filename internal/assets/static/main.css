@@ -1203,7 +1203,6 @@ body {
 
 /* Layout Edit Mode Styling */
 body.layout-edit-mode .widget.editable {
-    cursor: move;
     position: relative;
     box-shadow: 0 0 0 2px var(--color-primary);
     border-radius: var(--border-radius);
@@ -1808,5 +1807,238 @@ body.modal-open {
     font-weight: 600;
     color: var(--color-text-highlight);
     font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------
+   Mobile & Touch Optimizations
+   ---------------------------------------------------- */
+
+* {
+    -webkit-tap-highlight-color: rgba(255, 255, 255, 0.08);
+}
+
+button, a, [role="button"], label, select, textarea {
+    touch-action: manipulation;
+}
+
+body.layout-edit-mode .widget.editable,
+body.layout-edit-mode .widget-drag-handle {
+    touch-action: none;
+}
+
+body.is-dragging {
+    touch-action: none !important;
+}
+
+body.layout-edit-mode {
+    overscroll-behavior-y: none;
+}
+
+.cards-horizontal {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+}
+
+.cards-horizontal .card {
+    scroll-snap-align: start;
+}
+
+/* Edit mode :active states for touch feedback */
+body.layout-edit-mode .widget.editable:active:not(.dragging) {
+    box-shadow: 0 0 0 3px var(--color-primary), 0 5px 18px rgba(0, 0, 0, 0.3) !important;
+    filter: brightness(1.05);
+}
+
+body.layout-edit-mode .widget.editable:active:not(.dragging) > .widget-content:not(.widget-content-frameless) {
+    border-style: solid !important;
+}
+
+body.layout-edit-mode .widget.editable:active:not(.dragging) > .widget-content-frame {
+    border-style: solid !important;
+}
+
+body.layout-edit-mode .page-column.drop-active,
+body.layout-edit-mode .page-column-head.drop-active,
+body.layout-edit-mode .widget-group.drop-active {
+    border-color: var(--color-primary) !important;
+    background-color: rgba(128, 128, 128, 0.06) !important;
+}
+
+.widget-edit-btn:active {
+    color: var(--color-primary) !important;
+    opacity: 1;
+    transform: scale(1.15);
+    background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.widget-delete-btn:active {
+    color: var(--color-negative) !important;
+    opacity: 1;
+    transform: scale(1.15);
+    background: rgba(128, 128, 128, 0.1) !important;
+}
+
+/* Drag handle */
+.widget-drag-handle {
+    cursor: grab;
+    padding: 4px 2px;
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+    touch-action: none;
+    margin-right: 4px;
+    flex-shrink: 0;
+    color: var(--color-text-subdue);
+}
+
+.widget-drag-handle:active {
+    cursor: grabbing;
+    opacity: 0.8;
+    color: var(--color-text-highlight);
+}
+
+/* Drag ghost (floating copy that follows pointer during drag) */
+.widget-drag-ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 10000;
+    opacity: 0.88;
+    transform: rotate(1.5deg) scale(0.93);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    border-radius: var(--border-radius);
+}
+
+/* Prevent mobile nav column switching during drag */
+body.is-dragging .mobile-navigation {
+    pointer-events: none !important;
+    opacity: 0.4;
+}
+
+/* Spotify volume slider mobile-friendly */
+#spotify-volume-slider {
+    height: 24px;
+}
+
+#spotify-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    cursor: pointer;
+    margin-top: -7px;
+}
+
+#spotify-volume-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    cursor: pointer;
+    border: none;
+}
+
+#spotify-volume-slider::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+}
+
+#spotify-volume-slider::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+}
+
+/* Mobile-specific drag handle sizing */
+@media (max-width: 1190px) {
+    .widget-drag-handle {
+        padding: 10px 8px;
+        margin-right: 6px;
+    }
+
+    #select-page-layout {
+        font-size: 0.9rem;
+        padding: 8px 12px !important;
+        width: 100%;
+        margin-bottom: 8px;
+        height: auto;
+    }
+}
+
+/* Confirm / Prompt modal */
+.confirm-modal-overlay {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(3px);
+}
+
+.confirm-modal-content {
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    width: 420px;
+    max-width: 92%;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+    font-family: inherit;
+}
+
+.confirm-modal-message {
+    margin-bottom: 20px;
+    font-size: 1.2rem;
+    color: var(--color-text-highlight);
+    line-height: 1.5;
+}
+
+.confirm-modal-input {
+    width: 100%;
+    padding: 10px;
+    background: var(--color-background);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: 4px;
+    color: inherit;
+    font-family: inherit;
+    font-size: 1rem;
+    outline: none;
+    margin-bottom: 20px;
+}
+
+.confirm-modal-input:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 2px rgba(67, 50, 70, 0.25);
+}
+
+.confirm-modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.confirm-modal-cancel {
+    padding: 8px 16px;
+    background: none;
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: 4px;
+    color: inherit;
+    cursor: pointer;
+    font-family: inherit;
+}
+
+.confirm-modal-ok {
+    padding: 8px 16px;
+    background: var(--color-primary);
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font-weight: bold;
+    font-family: inherit;
 }
 
