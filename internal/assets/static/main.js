@@ -1431,6 +1431,59 @@ function setupSettingsMenu() {
             showToast("Error sending request: " + err.message, "error");
         }
     });
+
+    // Config import logic
+    const importBtn = document.getElementById("btn-config-import");
+    const importFile = document.getElementById("config-import-file");
+    const importStatus = document.getElementById("config-import-status");
+
+    if (importBtn && importFile) {
+        importBtn.addEventListener("click", () => importFile.click());
+
+        importFile.addEventListener("change", async () => {
+            const file = importFile.files[0];
+            if (!file) return;
+
+            if (!file.name.endsWith(".yml") && !file.name.endsWith(".yaml")) {
+                showToast("Only .yml or .yaml files are accepted.", "error");
+                importFile.value = "";
+                return;
+            }
+
+            if (!confirm("Importing a config file will replace your current configuration entirely. Continue?")) {
+                importFile.value = "";
+                return;
+            }
+
+            importStatus.textContent = "Importing...";
+            importBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append("file", file);
+
+                const response = await fetch("/api/config/import", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (response.ok) {
+                    showToast("Config imported successfully. Reloading...", "success");
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    const errText = await response.text();
+                    showToast("Import failed: " + errText, "error");
+                    importStatus.textContent = "";
+                }
+            } catch (err) {
+                showToast("Error importing config: " + err.message, "error");
+                importStatus.textContent = "";
+            }
+
+            importBtn.disabled = false;
+            importFile.value = "";
+        });
+    }
 }
 
 // Updates all digital clock widgets with local time and date client-side

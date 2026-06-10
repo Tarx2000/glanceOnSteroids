@@ -239,6 +239,15 @@
                 <input type="text" name="theme_custom_css_file" placeholder="e.g. /assets/style.css" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
             </div>
 
+            <!-- Config Import -->
+            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Import Configuration</h4>
+            <div style="margin-bottom: 25px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Import a .yml config file to replace the current configuration.</label>
+                <input type="file" id="config-import-file" accept=".yml,.yaml" style="display:none;" />
+                <button type="button" id="btn-config-import" style="padding: 8px 16px; background: none; border: 1px solid var(--color-primary); border-radius: 4px; color: var(--color-primary); cursor: pointer; font-family: inherit; margin-top: 5px;">Choose File & Import</button>
+                <span id="config-import-status" style="font-size: 0.85em; margin-left: 10px;"></span>
+            </div>
+
             <!-- Caution Message -->
             <p style="font-size: 0.8em; color: var(--color-negative); margin-bottom: 20px; line-height: 1.4; border: 1px solid var(--color-negative); padding: 8px; border-radius: 4px; background: rgba(255, 69, 58, 0.05);">
                 <strong>Caution:</strong> Changing the Port or Host will bind the server to the new address immediately. If you lose connection, update your browser URL accordingly.

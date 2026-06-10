@@ -275,6 +275,8 @@ func (a *Application) Serve() error {
 	mux.HandleFunc("POST /api/settings/save", a.HandleSettingsSave)
 	mux.HandleFunc("POST /api/pages/add", a.HandlePageAdd)
 
+	mux.HandleFunc("POST /api/config/import", a.HandleConfigImport)
+
 	if a.Config.Server.AssetsPath != "" {
 		absAssetsPath, err := filepath.Abs(a.Config.Server.AssetsPath)
 
@@ -1778,5 +1780,65 @@ func updateMapValue(node *yaml.Node, key string, val string) {
 	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
 	valNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: val}
 	node.Content = append(node.Content, keyNode, valNode)
+}
+
+func (a *Application) HandleConfigImport(w http.ResponseWriter, r *http.Request) {
+	a.configFileMu.Lock()
+	defer a.configFileMu.Unlock()
+
+	r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024)
+
+	err := r.ParseMultipartForm(2 * 1024 * 1024)
+	if err != nil {
+		http.Error(w, "failed to parse multipart form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "missing or invalid file upload", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	if !strings.HasSuffix(strings.ToLower(header.Filename), ".yml") &&
+		!strings.HasSuffix(strings.ToLower(header.Filename), ".yaml") {
+		http.Error(w, "only .yml or .yaml files are accepted", http.StatusBadRequest)
+		return
+	}
+
+	contentBytes, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "failed to read file: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var testConfig Config
+	if err := yaml.Unmarshal(contentBytes, &testConfig); err != nil {
+		http.Error(w, "invalid YAML syntax: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate using existing validation without full widget initialization
+	if err := configIsValid(&testConfig); err != nil {
+		http.Error(w, "config validation failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Write the raw YAML bytes directly to disk, preserving all formatting/comments
+	if err := os.WriteFile(a.ConfigPath, contentBytes, 0644); err != nil {
+		http.Error(w, "failed to write config file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := a.reloadConfig(); err != nil {
+		http.Error(w, "config written but reload failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	InitSpotify(a.Config.Spotify.ClientID, a.Config.Spotify.ClientSecret, a.Config.Spotify.RedirectURL)
+
+	slog.Info("Config imported successfully", "filename", header.Filename)
+	w.WriteHeader(http.StatusOK)
 }
 
