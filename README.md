@@ -47,13 +47,13 @@ Checkout the [releases page](https://github.com/glanceapp/glance/releases) for a
 ```
 
 #### Docker
-> [!IMPORTANT]
+> [!NOTE]
 >
-> Make sure you have a valid `glance.yml` file in the same directory before running the container.
+> The app will auto-create a default `glance.yml` if none is found. No need to pre-create it.
 
 ```bash
 docker run -d -p 8080:8080 \
-  -v ./:/app \
+  -v ./config:/data \
   -v /etc/timezone:/etc/timezone:ro \
   -v /etc/localtime:/etc/localtime:ro \
   glanceapp/glance
@@ -69,7 +69,7 @@ services:
       dockerfile: Dockerfile.single-platform
     container_name: glance
     volumes:
-      - ./:/app
+      - ./config:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
@@ -77,9 +77,7 @@ services:
     restart: unless-stopped
 ```
 
-> [!NOTE]
->
-> The project directory is mounted as a whole (`./:/app`) rather than bind-mounting `glance.yml` as a single file. This ensures the config file is writable inside the container (required for settings saves, config imports, and the SQLite database). Single-file bind mounts are often read-only depending on the Docker storage driver.
+> The `./config` directory is mounted to `/data` inside the container. This is where `glance.yml` and `glance.db` live. The binary lives in `/usr/local/bin/glance` and is never overwritten by volume mounts.
 
 ### Building from source
 

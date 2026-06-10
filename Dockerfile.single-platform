@@ -1,7 +1,10 @@
 FROM alpine:3.19
 
-WORKDIR /app
-COPY build/glance /app/glance
+COPY build/glance /usr/local/bin/glance
+
+RUN mkdir -p /data
+WORKDIR /data
 
 EXPOSE 8080/tcp
-ENTRYPOINT ["/app/glance"]
+ENTRYPOINT ["glance"]
+CMD ["--config", "/data/glance.yml"]

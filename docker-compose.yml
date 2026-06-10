@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.single-platform
     container_name: glance
     volumes:
-      - ./:/app
+      - ./config:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:

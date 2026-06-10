@@ -4,8 +4,11 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG TARGETVARIANT
 
-WORKDIR /app
-COPY build/glance-$TARGETOS-$TARGETARCH${TARGETVARIANT} /app/glance
+COPY build/glance-$TARGETOS-$TARGETARCH${TARGETVARIANT} /usr/local/bin/glance
+
+RUN mkdir -p /data
+WORKDIR /data
 
 EXPOSE 8080/tcp
-ENTRYPOINT ["/app/glance"]
+ENTRYPOINT ["glance"]
+CMD ["--config", "/data/glance.yml"]
