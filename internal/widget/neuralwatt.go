@@ -42,11 +42,7 @@ type NeuralWatt struct {
 func (widget *NeuralWatt) Initialize() error {
 	widget.withTitle("NeuralWatt")
 
-	cacheMins := 15
-	if widget.UpdateIntervalMins > 0 {
-		cacheMins = widget.UpdateIntervalMins
-	}
-	widget.withCacheDuration(time.Duration(cacheMins) * time.Minute)
+	widget.withCacheDaily()
 
 	if widget.ApiKey == "" {
 		return fmt.Errorf("neuralwatt widget requires an api-key")

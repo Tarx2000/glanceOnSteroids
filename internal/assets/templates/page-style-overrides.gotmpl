@@ -10,5 +10,9 @@
     {{ if .App.Config.Theme.PrimaryColor }}--color-primary: {{ .App.Config.Theme.PrimaryColor.AsCSSValue }};{{ end }}
     {{ if .App.Config.Theme.PositiveColor }}--color-positive: {{ .App.Config.Theme.PositiveColor.AsCSSValue }};{{ end }}
     {{ if .App.Config.Theme.NegativeColor }}--color-negative: {{ .App.Config.Theme.NegativeColor.AsCSSValue }};{{ end }}
+    {{ if .App.Config.Theme.WidgetGap }}--widget-gap: {{ .App.Config.Theme.WidgetGap }};{{ end }}
+    {{ if .App.Config.Theme.WidgetContentVerticalPadding }}--widget-content-vertical-padding: {{ .App.Config.Theme.WidgetContentVerticalPadding }};{{ end }}
+    {{ if .App.Config.Theme.WidgetContentHorizontalPadding }}--widget-content-horizontal-padding: {{ .App.Config.Theme.WidgetContentHorizontalPadding }};{{ end }}
+    {{ if .App.Config.Theme.BorderRadius }}--border-radius: {{ .App.Config.Theme.BorderRadius }};{{ end }}
 }
 </style>

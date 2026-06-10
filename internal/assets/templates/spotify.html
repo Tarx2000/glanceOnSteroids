@@ -23,6 +23,25 @@
             transform: scale(1.03);
             filter: brightness(1.1);
         }
+        .spotify-btn-secondary {
+            background-color: var(--color-widget-content-border);
+            color: var(--color-primary) !important;
+            padding: 6px 14px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-weight: bold;
+            display: inline-block;
+            font-size: 0.8em;
+            letter-spacing: 0.5px;
+            transition: transform 0.2s ease, background-color 0.2s ease;
+            cursor: pointer;
+            border: none;
+            font-family: inherit;
+        }
+        .spotify-btn-secondary:hover {
+            transform: scale(1.03);
+            filter: brightness(1.2);
+        }
         .spotify-control-btn {
             background: none;
             border: none;
@@ -65,6 +84,66 @@
             background: var(--color-widget-content-border);
             border-radius: 2px;
         }
+        /* Idle / offline state styling */
+        .spotify-idle-art {
+            width: 70px;
+            height: 70px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .spotify-idle-icon {
+            color: var(--color-positive);
+            opacity: 0.9;
+        }
+        .spotify-idle-title {
+            font-weight: bold;
+            font-size: 0.95em;
+            color: var(--color-primary);
+        }
+        .spotify-idle-subtitle {
+            font-size: 0.85em;
+            opacity: 0.5;
+            margin-top: 3px;
+        }
+        /* Error state styling */
+        .spotify-error-art {
+            width: 70px;
+            height: 70px;
+            border-radius: 6px;
+            background: linear-gradient(135deg, #2a1a1a 0%, #3a2a2a 100%);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .spotify-error-icon {
+            color: #ff6b6b;
+            opacity: 0.9;
+        }
+        .spotify-error-title {
+            font-weight: bold;
+            font-size: 0.95em;
+            color: var(--color-primary);
+        }
+        .spotify-error-subtitle {
+            font-size: 0.85em;
+            opacity: 0.7;
+            margin-top: 3px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .spotify-error-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
     </style>
 
     <!-- Spotify login redirection UI -->
@@ -76,23 +155,80 @@
     
     <!-- Spotify active playback interface -->
     <div id="spotify-player-content" style="{{ if .IsAuthorized }}display: block;{{ else }}display: none;{{ end }}">
-        <div style="display: flex; gap: 15px; align-items: center;">
-            <img id="spotify-album-art" src="" alt="Album Art" style="width: 70px; height: 70px; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background-color: #242424; object-fit: cover;" />
-            <div style="flex-grow: 1; min-width: 0;">
-                <div id="spotify-track-title" style="font-weight: bold; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary);">Not Playing</div>
-                <div id="spotify-track-artist" style="font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.8; margin-top: 3px;">Unknown Artist</div>
-                <div id="spotify-track-album" style="font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.6; margin-top: 2px;">Unknown Album</div>
+        <!-- Active track info -->
+        <div id="spotify-active-track" style="display: none;">
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <img id="spotify-album-art" src="" alt="Album Art" style="width: 70px; height: 70px; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background-color: #242424; object-fit: cover;" />
+                <div style="flex-grow: 1; min-width: 0;">
+                    <div id="spotify-track-title" style="font-weight: bold; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary);">Not Playing</div>
+                    <div id="spotify-track-artist" style="font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.8; margin-top: 3px;">Unknown Artist</div>
+                    <div id="spotify-track-album" style="font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.6; margin-top: 2px;">Unknown Album</div>
+                </div>
+            </div>
+            
+            <!-- Playback progress bar -->
+            <div style="margin-top: 12px;">
+                <div class="spotify-progress-bar-container" id="spotify-progress-bar">
+                    <div id="spotify-progress-fill" class="spotify-progress-bar-fill"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75em; opacity: 0.6; margin-top: 4px;">
+                    <span id="spotify-time-progress">0:00</span>
+                    <span id="spotify-time-duration">0:00</span>
+                </div>
             </div>
         </div>
-        
-        <!-- Playback progress bar -->
-        <div style="margin-top: 12px;">
-            <div class="spotify-progress-bar-container" id="spotify-progress-bar">
-                <div id="spotify-progress-fill" class="spotify-progress-bar-fill"></div>
+
+        <!-- Idle / offline state -->
+        <div id="spotify-idle-state" style="display: none;">
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <div class="spotify-idle-art">
+                    <svg class="spotify-idle-icon" viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                    </svg>
+                </div>
+                <div style="flex-grow: 1; min-width: 0;">
+                    <div class="spotify-idle-title">Spotify Offline</div>
+                    <div class="spotify-idle-subtitle">No active playback found</div>
+                </div>
             </div>
-            <div style="display: flex; justify-content: space-between; font-size: 0.75em; opacity: 0.6; margin-top: 4px;">
-                <span id="spotify-time-progress">0:00</span>
-                <span id="spotify-time-duration">0:00</span>
+            <!-- Empty progress bar placeholder to keep layout height stable -->
+            <div style="margin-top: 12px; opacity: 0.15;">
+                <div class="spotify-progress-bar-container">
+                    <div class="spotify-progress-bar-fill" style="width: 0%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75em; margin-top: 4px;">
+                    <span>0:00</span>
+                    <span>0:00</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error state -->
+        <div id="spotify-error-state" style="display: none;">
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <div class="spotify-error-art">
+                    <svg class="spotify-error-icon" viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+                        <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
+                    </svg>
+                </div>
+                <div style="flex-grow: 1; min-width: 0;">
+                    <div class="spotify-error-title">Spotify Error</div>
+                    <div id="spotify-error-message" class="spotify-error-subtitle">Something went wrong</div>
+                    <div class="spotify-error-actions">
+                        <a href="/api/spotify/login" class="spotify-btn">RECONNECT SPOTIFY</a>
+                        <button type="button" class="spotify-btn-secondary" onclick="openSpotifyWidgetSettings()">Edit Settings</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Empty progress bar placeholder to keep layout height stable -->
+            <div style="margin-top: 12px; opacity: 0.15;">
+                <div class="spotify-progress-bar-container">
+                    <div class="spotify-progress-bar-fill" style="width: 0%;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75em; margin-top: 4px;">
+                    <span>0:00</span>
+                    <span>0:00</span>
+                </div>
             </div>
         </div>
 

@@ -39,14 +39,18 @@ type Application struct {
 }
 
 type Theme struct {
-	BackgroundColor          *widget.HSLColorField `yaml:"background-color"`
-	PrimaryColor             *widget.HSLColorField `yaml:"primary-color"`
-	PositiveColor            *widget.HSLColorField `yaml:"positive-color"`
-	NegativeColor            *widget.HSLColorField `yaml:"negative-color"`
-	Light                    bool                  `yaml:"light"`
-	ContrastMultiplier       float32               `yaml:"contrast-multiplier"`
-	TextSaturationMultiplier float32               `yaml:"text-saturation-multiplier"`
-	CustomCSSFile            string                `yaml:"custom-css-file"`
+	BackgroundColor                *widget.HSLColorField `yaml:"background-color"`
+	PrimaryColor                   *widget.HSLColorField `yaml:"primary-color"`
+	PositiveColor                  *widget.HSLColorField `yaml:"positive-color"`
+	NegativeColor                  *widget.HSLColorField `yaml:"negative-color"`
+	Light                          bool                  `yaml:"light"`
+	ContrastMultiplier             float32               `yaml:"contrast-multiplier"`
+	TextSaturationMultiplier       float32               `yaml:"text-saturation-multiplier"`
+	CustomCSSFile                  string                `yaml:"custom-css-file"`
+	WidgetGap                      *string               `yaml:"widget-gap,omitempty"`
+	WidgetContentVerticalPadding   *string               `yaml:"widget-content-vertical-padding,omitempty"`
+	WidgetContentHorizontalPadding *string               `yaml:"widget-content-horizontal-padding,omitempty"`
+	BorderRadius                   *string               `yaml:"border-radius,omitempty"`
 }
 
 type Server struct {
@@ -1244,16 +1248,16 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Prepare updated widget dictionary
+	// Prepare updated widget dictionary by merging new properties over existing config.
+	// This preserves fields not represented in the edit form (e.g. cache, limit, collapse-after).
 	newWidgetMap := map[string]interface{}{
 		"type": widgetType,
 	}
-	if widgetType == "group" {
-		if curWidgets, ok := currentWidgetMap["widgets"]; ok {
-			newWidgetMap["widgets"] = curWidgets
-		} else {
-			newWidgetMap["widgets"] = []interface{}{}
+	for k, v := range currentWidgetMap {
+		if k == "type" {
+			continue
 		}
+		newWidgetMap[k] = v
 	}
 	for k, v := range payload.Properties {
 		if f, ok := v.(float64); ok && f == float64(int(f)) {
@@ -1510,14 +1514,18 @@ type serverSettingsPayload struct {
 }
 
 type themeSettingsPayload struct {
-	Light                    bool    `json:"light" yaml:"light"`
-	BackgroundColor          string  `json:"background-color" yaml:"background-color,omitempty"`
-	PrimaryColor             string  `json:"primary-color" yaml:"primary-color,omitempty"`
-	PositiveColor            string  `json:"positive-color" yaml:"positive-color,omitempty"`
-	NegativeColor            string  `json:"negative-color" yaml:"negative-color,omitempty"`
-	ContrastMultiplier       float32 `json:"contrast-multiplier" yaml:"contrast-multiplier,omitempty"`
-	TextSaturationMultiplier float32 `json:"text-saturation-multiplier" yaml:"text-saturation-multiplier,omitempty"`
-	CustomCSSFile            string  `json:"custom-css-file" yaml:"custom-css-file,omitempty"`
+	Light                          bool    `json:"light" yaml:"light"`
+	BackgroundColor                string  `json:"background-color" yaml:"background-color,omitempty"`
+	PrimaryColor                   string  `json:"primary-color" yaml:"primary-color,omitempty"`
+	PositiveColor                  string  `json:"positive-color" yaml:"positive-color,omitempty"`
+	NegativeColor                  string  `json:"negative-color" yaml:"negative-color,omitempty"`
+	ContrastMultiplier             float32 `json:"contrast-multiplier" yaml:"contrast-multiplier,omitempty"`
+	TextSaturationMultiplier       float32 `json:"text-saturation-multiplier" yaml:"text-saturation-multiplier,omitempty"`
+	CustomCSSFile                  string  `json:"custom-css-file" yaml:"custom-css-file,omitempty"`
+	WidgetGap                      string  `json:"widget-gap" yaml:"widget-gap,omitempty"`
+	WidgetContentVerticalPadding   string  `json:"widget-content-vertical-padding" yaml:"widget-content-vertical-padding,omitempty"`
+	WidgetContentHorizontalPadding string  `json:"widget-content-horizontal-padding" yaml:"widget-content-horizontal-padding,omitempty"`
+	BorderRadius                   string  `json:"border-radius" yaml:"border-radius,omitempty"`
 }
 
 type spotifySettingsPayload struct {
@@ -1548,6 +1556,13 @@ func formatHSL(field *widget.HSLColorField) string {
 	return fmt.Sprintf("%d %d %d", field.Hue, field.Saturation, field.Lightness)
 }
 
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 // HandleSettingsGet fetches the active configuration parameters.
 func (a *Application) HandleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	payload := settingsPayload{
@@ -1561,14 +1576,18 @@ func (a *Application) HandleSettingsGet(w http.ResponseWriter, r *http.Request) 
 			AssetsPath: a.Config.Server.AssetsPath,
 		},
 		Theme: themeSettingsPayload{
-			Light:                    a.Config.Theme.Light,
-			BackgroundColor:          formatHSL(a.Config.Theme.BackgroundColor),
-			PrimaryColor:             formatHSL(a.Config.Theme.PrimaryColor),
-			PositiveColor:            formatHSL(a.Config.Theme.PositiveColor),
-			NegativeColor:            formatHSL(a.Config.Theme.NegativeColor),
-			ContrastMultiplier:       a.Config.Theme.ContrastMultiplier,
-			TextSaturationMultiplier: a.Config.Theme.TextSaturationMultiplier,
-			CustomCSSFile:            a.Config.Theme.CustomCSSFile,
+			Light:                          a.Config.Theme.Light,
+			BackgroundColor:                formatHSL(a.Config.Theme.BackgroundColor),
+			PrimaryColor:                   formatHSL(a.Config.Theme.PrimaryColor),
+			PositiveColor:                  formatHSL(a.Config.Theme.PositiveColor),
+			NegativeColor:                  formatHSL(a.Config.Theme.NegativeColor),
+			ContrastMultiplier:             a.Config.Theme.ContrastMultiplier,
+			TextSaturationMultiplier:       a.Config.Theme.TextSaturationMultiplier,
+			CustomCSSFile:                  a.Config.Theme.CustomCSSFile,
+			WidgetGap:                      derefString(a.Config.Theme.WidgetGap),
+			WidgetContentVerticalPadding:   derefString(a.Config.Theme.WidgetContentVerticalPadding),
+			WidgetContentHorizontalPadding: derefString(a.Config.Theme.WidgetContentHorizontalPadding),
+			BorderRadius:                   derefString(a.Config.Theme.BorderRadius),
 		},
 		Spotify: spotifySettingsPayload{
 			ClientID:     a.Config.Spotify.ClientID,

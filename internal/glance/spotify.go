@@ -22,6 +22,7 @@ var (
 	lastIsPlaying   bool
 	lastProgressMS  int
 	lastVolume      int
+	lastSpotifyError string
 	spotifyPoller   sync.Once
 )
 
@@ -65,18 +66,35 @@ func InitSpotify(clientID, clientSecret, redirectURL string) {
 func triggerInitialSpotifyPush() {
 	time.Sleep(300 * time.Millisecond) // wait for websocket to fully open
 	status, err := getSpotifyPlaybackStatus()
-	if err == nil {
-		BroadcastMessage("spotify_update", map[string]interface{}{
-			"authorized": true,
-			"track":      status,
-		})
-	} else {
+	if err != nil {
+		errMsg := err.Error()
+		spotifyStateMu.Lock()
+		lastSpotifyError = errMsg
+		spotifyStateMu.Unlock()
+		log.Printf("[Spotify] Initial push failed: %v", err)
 		auth, _ := dbGetSetting("spotify_authorized", "false")
 		BroadcastMessage("spotify_update", map[string]interface{}{
 			"authorized": auth == "true",
 			"track":      nil,
+			"error":      errMsg,
 		})
+		return
 	}
+
+	spotifyStateMu.Lock()
+	lastTrackID = status.ID
+	lastIsPlaying = status.IsPlaying
+	lastProgressMS = status.Progress
+	lastVolume = status.Volume
+	lastSpotifyError = ""
+	spotifyStateMu.Unlock()
+
+	log.Printf("[Spotify] Initial push: track=%q is_playing=%v", status.ID, status.IsPlaying)
+	BroadcastMessage("spotify_update", map[string]interface{}{
+		"authorized": true,
+		"track":      status,
+		"error":      "",
+	})
 }
 
 // StartSpotifyPoller starts the background loop that polls Spotify status and pushes it via WebSockets.
@@ -100,16 +118,35 @@ func StartSpotifyPoller() {
 
 				status, err := getSpotifyPlaybackStatus()
 				if err != nil {
-					// Silent failure: might be transient network issue or nothing playing
+					errMsg := err.Error()
+					spotifyStateMu.Lock()
+					changed := errMsg != lastSpotifyError
+					if changed {
+						lastSpotifyError = errMsg
+					}
+					spotifyStateMu.Unlock()
+
+					if changed {
+						log.Printf("[Spotify] Poller broadcast error: %v", errMsg)
+						BroadcastMessage("spotify_update", map[string]interface{}{
+							"authorized": true,
+							"track":      nil,
+							"error":      errMsg,
+						})
+					}
 					continue
 				}
 
 				spotifyStateMu.Lock()
 				changed := false
+				if lastSpotifyError != "" {
+					lastSpotifyError = ""
+					changed = true
+				}
 				if status.ID != lastTrackID ||
 					status.IsPlaying != lastIsPlaying ||
 					status.Volume != lastVolume ||
-					abs(status.Progress - lastProgressMS) > 5000 { // update if client is drifted by > 5 seconds
+					abs(status.Progress-lastProgressMS) > 5000 {
 					lastTrackID = status.ID
 					lastIsPlaying = status.IsPlaying
 					lastProgressMS = status.Progress
@@ -119,9 +156,11 @@ func StartSpotifyPoller() {
 				spotifyStateMu.Unlock()
 
 				if changed {
+					log.Printf("[Spotify] Poller broadcast: track=%q is_playing=%v progress=%d duration=%d", status.ID, status.IsPlaying, status.Progress, status.Duration)
 					BroadcastMessage("spotify_update", map[string]interface{}{
 						"authorized": true,
 						"track":      status,
+						"error":      "",
 					})
 				}
 			}
@@ -178,16 +217,20 @@ func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 
 	if resp.StatusCode == http.StatusNoContent {
 		// Nothing is currently playing
+		log.Println("[Spotify] API returned 204 No Content (nothing playing)")
 		return &SpotifyTrack{IsPlaying: false}, nil
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		// Token expired, force refresh next time
+		log.Println("[Spotify] API returned 401 Unauthorized")
 		_ = dbSetSetting("spotify_access_token", "")
 		return nil, fmt.Errorf("unauthorized")
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[Spotify] API returned status %d: %s", resp.StatusCode, string(body))
 		return nil, fmt.Errorf("spotify API returned status %d", resp.StatusCode)
 	}
 
@@ -224,6 +267,7 @@ func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 
 	// Guard against empty item (e.g., private podcasts or ad slots)
 	if data.Item.ID == "" {
+		log.Printf("[Spotify] API returned 200 but item.ID is empty (is_playing=%v)", data.IsPlaying)
 		return &SpotifyTrack{IsPlaying: false}, nil
 	}
 
@@ -237,7 +281,7 @@ func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 		imgURL = data.Item.Album.Images[0].URL
 	}
 
-	return &SpotifyTrack{
+	track := &SpotifyTrack{
 		ID:        data.Item.ID,
 		Title:     data.Item.Name,
 		Artist:    strings.Join(artists, ", "),
@@ -247,7 +291,9 @@ func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 		Duration:  data.Item.DurationMS,
 		IsPlaying: data.IsPlaying,
 		Volume:    data.Device.VolumePercent,
-	}, nil
+	}
+	log.Printf("[Spotify] API track: %s by %s (is_playing=%v)", track.Title, track.Artist, track.IsPlaying)
+	return track, nil
 }
 
 // getSpotifyAccessToken returns a valid access token, auto-refreshing it if needed.

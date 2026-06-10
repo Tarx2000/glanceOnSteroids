@@ -1,4 +1,4 @@
-<div class="widget widget-type-{{ .GetType }}">
+<div class="widget widget-type-{{ .GetType }}{{ if .HideTitle }} widget-hide-title{{ end }}">
     <div class="widget-header">
         <div class="uppercase">{{ .Title }}</div>
         {{ if and .Error .ContentAvailable }}

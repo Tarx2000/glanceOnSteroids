@@ -427,8 +427,29 @@ function startLocalSpotifyTicker(progressMs, durationMs, isPlaying) {
     }, 1000);
 }
 
+// Opens the edit widget modal for the Spotify widget by entering edit mode if needed
+function openSpotifyWidgetSettings() {
+    const player = document.getElementById("spotify-player");
+    if (!player) return;
+    // Enter edit mode so dataset attributes are populated
+    if (!document.body.classList.contains("layout-edit-mode")) {
+        toggleEditMode(true);
+    }
+    const widget = player.closest(".widget");
+    if (!widget) return;
+    const col = widget.dataset.originalCol;
+    const idx = widget.dataset.originalIdx;
+    const nestedIdx = widget.dataset.originalNestedIdx !== undefined ? parseInt(widget.dataset.originalNestedIdx) : undefined;
+    if (col !== undefined && idx !== undefined) {
+        openEditWidgetModal(col, parseInt(idx), nestedIdx);
+    } else {
+        showToast("Unable to locate widget.", "error");
+    }
+}
+
 // Updates the DOM of the Spotify widget with parsed WebSocket updates
 function updateSpotifyWidget(data) {
+    console.log("[Spotify] updateSpotifyWidget called with:", data);
     const player = document.getElementById("spotify-player");
     if (!player) return;
 
@@ -446,25 +467,52 @@ function updateSpotifyWidget(data) {
     if (playerContent) playerContent.style.display = "block";
 
     const track = data.track;
-    const albumArt = document.getElementById("spotify-album-art");
-    const trackTitle = document.getElementById("spotify-track-title");
-    const trackArtist = document.getElementById("spotify-track-artist");
-    const trackAlbum = document.getElementById("spotify-track-album");
+    const error = data.error;
+    console.log("[Spotify] track object:", track, "track.id:", track ? track.id : undefined, "error:", error);
+
+    const activeTrack = document.getElementById("spotify-active-track");
+    const idleState = document.getElementById("spotify-idle-state");
+    const errorState = document.getElementById("spotify-error-state");
     const iconPlay = document.getElementById("spotify-icon-play");
     const iconPause = document.getElementById("spotify-icon-pause");
     const volumeSlider = document.getElementById("spotify-volume-slider");
     const volumeVal = document.getElementById("spotify-volume-val");
 
-    if (!track || !track.id) {
-        if (albumArt) albumArt.src = "";
-        if (trackTitle) trackTitle.innerText = "Not Playing";
-        if (trackArtist) trackArtist.innerText = "No active playback";
-        if (trackAlbum) trackAlbum.innerText = "";
+    if (error) {
+        console.log("[Spotify] Showing error state:", error);
+        if (activeTrack) activeTrack.style.display = "none";
+        if (idleState) idleState.style.display = "none";
+        if (errorState) {
+            errorState.style.display = "block";
+            const msgEl = document.getElementById("spotify-error-message");
+            if (msgEl) msgEl.innerText = error;
+        }
         if (iconPlay) iconPlay.style.display = "block";
         if (iconPause) iconPause.style.display = "none";
         clearInterval(spotifyInterval);
         return;
     }
+
+    if (errorState) errorState.style.display = "none";
+
+    if (!track || !track.id) {
+        console.log("[Spotify] Showing idle state (no track or no track.id)");
+        if (activeTrack) activeTrack.style.display = "none";
+        if (idleState) idleState.style.display = "block";
+        if (iconPlay) iconPlay.style.display = "block";
+        if (iconPause) iconPause.style.display = "none";
+        clearInterval(spotifyInterval);
+        return;
+    }
+
+    console.log("[Spotify] Showing active track state");
+    if (activeTrack) activeTrack.style.display = "block";
+    if (idleState) idleState.style.display = "none";
+
+    const albumArt = document.getElementById("spotify-album-art");
+    const trackTitle = document.getElementById("spotify-track-title");
+    const trackArtist = document.getElementById("spotify-track-artist");
+    const trackAlbum = document.getElementById("spotify-track-album");
 
     if (albumArt) albumArt.src = track.image_url;
     if (trackTitle) trackTitle.innerText = track.title;
@@ -562,6 +610,7 @@ function setupWebSockets() {
         try {
             const msg = JSON.parse(event.data);
             if (msg.type === "spotify_update") {
+                console.log("[Spotify] WS update raw:", msg.data);
                 lastSpotifyState = msg.data;
                 // Cache authorization state to prevent flash on reconnect
                 if (msg.data && typeof msg.data.authorized === "boolean") {
@@ -1066,6 +1115,16 @@ function setupAddWidgetModal() {
         const type = typeSelect.value;
         fieldsContainer.innerHTML = widgetFieldTemplates[type] || `<p style="font-size:0.85em; opacity:0.6; text-align:center;">This widget type does not require any properties.</p>`;
 
+        const hideTitleWrapper = document.createElement("div");
+        hideTitleWrapper.style.cssText = "margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--color-separator);";
+        hideTitleWrapper.innerHTML = `
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="hide-title" style="cursor: pointer;" />
+                Hide Widget Title
+            </label>
+        `;
+        fieldsContainer.insertBefore(hideTitleWrapper, fieldsContainer.firstChild);
+
         // Wire dynamic add buttons for Monitor and Bookmarks
         if (type === "monitor") {
             const btnAddSite = document.getElementById("btn-add-monitor-site");
@@ -1151,6 +1210,7 @@ function setupAddWidgetModal() {
         const properties = {};
 
         formData.forEach((value, key) => {
+            if (key === "hide-title") return;
             if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories") {
                 properties[key] = value.split(",").map(s => s.trim()).filter(Boolean);
             } else if (key === "height" || key === "update-interval") {
@@ -1161,6 +1221,11 @@ function setupAddWidgetModal() {
                 properties[key] = value;
             }
         });
+
+        const hideTitleInput = form.elements["hide-title"];
+        if (hideTitleInput) {
+            properties["hide-title"] = hideTitleInput.checked;
+        }
 
         // Special handling for monitor site items
         if (typeSelect.value === "monitor") {
@@ -1414,6 +1479,10 @@ function setupSettingsMenu() {
             form.elements["theme_contrast_multiplier"].value = data.theme["contrast-multiplier"] !== undefined ? data.theme["contrast-multiplier"] : 1.0;
             form.elements["theme_text_saturation_multiplier"].value = data.theme["text-saturation-multiplier"] !== undefined ? data.theme["text-saturation-multiplier"] : 1.0;
             form.elements["theme_custom_css_file"].value = data.theme["custom-css-file"] || "";
+            form.elements["theme_widget_gap"].value = (data.theme && data.theme["widget-gap"]) || "";
+            form.elements["theme_widget_vertical_padding"].value = (data.theme && data.theme["widget-content-vertical-padding"]) || "";
+            form.elements["theme_widget_horizontal_padding"].value = (data.theme && data.theme["widget-content-horizontal-padding"]) || "";
+            form.elements["theme_border_radius"].value = (data.theme && data.theme["border-radius"]) || "";
 
         modal.style.display = "flex";
         document.body.style.overflow = "hidden";
@@ -1476,7 +1545,11 @@ function setupSettingsMenu() {
                 "negative-color": form.elements["theme_negative_color"].value,
                 "contrast-multiplier": parseFloat(form.elements["theme_contrast_multiplier"].value),
                 "text-saturation-multiplier": parseFloat(form.elements["theme_text_saturation_multiplier"].value),
-                "custom-css-file": form.elements["theme_custom_css_file"].value
+                "custom-css-file": form.elements["theme_custom_css_file"].value,
+                "widget-gap": form.elements["theme_widget_gap"].value,
+                "widget-content-vertical-padding": form.elements["theme_widget_vertical_padding"].value,
+                "widget-content-horizontal-padding": form.elements["theme_widget_horizontal_padding"].value,
+                "border-radius": form.elements["theme_border_radius"].value
             },
             spotify: {
                 "client-id": form.elements["spotify_client_id"].value,
@@ -1693,7 +1766,23 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
 
         fieldsContainer.innerHTML = widgetFieldTemplates[type] || `<p style="font-size:0.85em; opacity:0.6; text-align:center;">This widget type does not require any properties.</p>`;
 
+        const hideTitleWrapper = document.createElement("div");
+        hideTitleWrapper.style.cssText = "margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--color-separator);";
+        hideTitleWrapper.innerHTML = `
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="hide-title" style="cursor: pointer;" />
+                Hide Widget Title
+            </label>
+        `;
+        fieldsContainer.insertBefore(hideTitleWrapper, fieldsContainer.firstChild);
+
         prefillWidgetFields(fieldsContainer, type, widget);
+
+        const hideTitleCb = fieldsContainer.querySelector('[name="hide-title"]');
+        if (hideTitleCb) {
+            const ht = widget["hide-title"];
+            hideTitleCb.checked = ht === true || ht === "true" || ht === "on" || ht === 1;
+        }
 
         modal.style.display = "flex";
         document.body.style.overflow = "hidden";
@@ -1710,7 +1799,14 @@ function prefillWidgetFields(container, type, widget) {
         const inputs = container.querySelectorAll(`[name="${key}"]`);
         inputs.forEach(input => {
             if (Array.isArray(val)) {
-                input.value = val.join(", ");
+                if (val.length > 0 && typeof val[0] === "object" && val[0] !== null) {
+                    if (key === "feeds") {
+                        input.value = val.map(o => o.url || "").filter(Boolean).join(", ");
+                    }
+                    // Other object arrays (e.g. sites, groups) are handled separately
+                } else {
+                    input.value = val.join(", ");
+                }
             } else if (typeof val === "object" && val !== null) {
                 // Nested arrays/objects handled separately below
             } else {
@@ -1853,7 +1949,7 @@ function setupEditWidgetModal() {
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        
+
         const col = document.getElementById("edit-widget-col").value;
         const idx = document.getElementById("edit-widget-idx").value;
         const nestedIdxVal = document.getElementById("edit-widget-nested-idx").value;
@@ -1863,6 +1959,7 @@ function setupEditWidgetModal() {
         const properties = {};
 
         formData.forEach((value, key) => {
+            if (key === "hide-title") return;
             if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories") {
                 properties[key] = value.split(",").map(s => s.trim()).filter(Boolean);
             } else if (key === "height" || key === "limit" || key === "collapse-after" || key === "update-interval") {
@@ -1873,6 +1970,11 @@ function setupEditWidgetModal() {
                 properties[key] = value;
             }
         });
+
+        const hideTitleInput = form.elements["hide-title"];
+        if (hideTitleInput) {
+            properties["hide-title"] = hideTitleInput.checked;
+        }
 
         if (type === "monitor") {
             const sites = [];

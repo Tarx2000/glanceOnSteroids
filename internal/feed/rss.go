@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mmcdole/gofeed"
+	"gopkg.in/yaml.v3"
 )
 
 type RSSFeedItem struct {
@@ -22,6 +23,15 @@ type RSSFeedItem struct {
 type RSSFeedRequest struct {
 	Url   string `yaml:"url"`
 	Title string `yaml:"title"`
+}
+
+func (r *RSSFeedRequest) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		r.Url = node.Value
+		return nil
+	}
+	type plain RSSFeedRequest
+	return node.Decode((*plain)(r))
 }
 
 type RSSFeedItems []RSSFeedItem

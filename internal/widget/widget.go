@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -114,11 +115,31 @@ const (
 	cacheTypeInfinite cacheType = iota
 	cacheTypeDuration
 	cacheTypeOnTheHour
+	cacheTypeDaily
 )
+
+// BoolField is a bool that accepts string representations during YAML unmarshal.
+type BoolField bool
+
+func (b *BoolField) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		switch strings.ToLower(node.Value) {
+		case "true", "yes", "on", "1":
+			*b = true
+			return nil
+		case "false", "no", "off", "0", "":
+			*b = false
+			return nil
+		}
+	}
+	type plain BoolField
+	return node.Decode((*plain)(b))
+}
 
 type widgetBase struct {
 	Type                string        `yaml:"type"`
 	Title               string        `yaml:"title"`
+	HideTitle           BoolField     `yaml:"hide-title"`
 	CustomCacheDuration DurationField `yaml:"cache"`
 	ContentAvailable    bool          `yaml:"-"`
 	Error               error         `yaml:"-"`
@@ -215,6 +236,12 @@ func (w *widgetBase) withCacheOnTheHour() *widgetBase {
 	return w
 }
 
+func (w *widgetBase) withCacheDaily() *widgetBase {
+	w.CacheType = cacheTypeDaily
+
+	return w
+}
+
 func (w *widgetBase) withNotice(err error) *widgetBase {
 	w.Notice = err
 
@@ -276,6 +303,11 @@ func (w *widgetBase) getNextUpdateTime() time.Time {
 		return now.Add(time.Duration(
 			((60-now.Minute())*60)-now.Second(),
 		) * time.Second)
+	}
+
+	if w.CacheType == cacheTypeDaily {
+		nextDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Add(24 * time.Hour)
+		return nextDay
 	}
 
 	return time.Time{}
