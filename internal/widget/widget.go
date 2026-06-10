@@ -8,6 +8,8 @@ import (
 	"html/template"
 	"log/slog"
 	"math"
+	"reflect"
+	"sync"
 	"time"
 
 	"github.com/glanceapp/glance/internal/feed"
@@ -21,6 +23,8 @@ func New(widgetType string) (Widget, error) {
 		return &Calendar{}, nil
 	case "weather":
 		return &Weather{}, nil
+	case "clock":
+		return &Clock{}, nil
 	case "bookmarks":
 		return &Bookmarks{}, nil
 	case "iframe":
@@ -31,8 +35,12 @@ func New(widgetType string) (Widget, error) {
 		return &Releases{}, nil
 	case "videos":
 		return &Videos{}, nil
-	case "stocks":
+	case "stocks", "markets":
 		return &Stocks{}, nil
+	case "custom-api":
+		return &CustomAPI{}, nil
+	case "group":
+		return &Group{}, nil
 	case "reddit":
 		return &Reddit{}, nil
 	case "rss":
@@ -45,6 +53,10 @@ func New(widgetType string) (Widget, error) {
 		return &TwitchChannels{}, nil
 	case "repository":
 		return &Repository{}, nil
+	case "spotify":
+		return &Spotify{}, nil
+	case "neuralwatt":
+		return &NeuralWatt{}, nil
 	default:
 		return nil, fmt.Errorf("unknown widget type: %s", widgetType)
 	}
@@ -111,23 +123,32 @@ type widgetBase struct {
 	ContentAvailable    bool          `yaml:"-"`
 	Error               error         `yaml:"-"`
 	Notice              error         `yaml:"-"`
-	templateBuffer      bytes.Buffer  `yaml:"-"`
-	cacheDuration       time.Duration `yaml:"-"`
-	cacheType           cacheType     `yaml:"-"`
-	nextUpdate          time.Time     `yaml:"-"`
-	updateRetriedTimes  int           `yaml:"-"`
+	TemplateBuffer      bytes.Buffer  `yaml:"-"`
+	CacheDuration       time.Duration `yaml:"-"`
+	CacheType           cacheType     `yaml:"-"`
+	NextUpdate          time.Time     `yaml:"-"`
+	UpdateRetriedTimes  int           `yaml:"-"`
+	mu                  sync.Mutex    `yaml:"-"`
+}
+
+func (w *widgetBase) Lock() {
+	w.mu.Lock()
+}
+
+func (w *widgetBase) Unlock() {
+	w.mu.Unlock()
 }
 
 func (w *widgetBase) RequiresUpdate(now *time.Time) bool {
-	if w.cacheType == cacheTypeInfinite {
+	if w.CacheType == cacheTypeInfinite {
 		return false
 	}
 
-	if w.nextUpdate.IsZero() {
+	if w.NextUpdate.IsZero() {
 		return true
 	}
 
-	return now.After(w.nextUpdate)
+	return now.After(w.NextUpdate)
 }
 
 func (w *widgetBase) Update(ctx context.Context) {
@@ -139,8 +160,11 @@ func (w *widgetBase) GetType() string {
 }
 
 func (w *widgetBase) render(data any, t *template.Template) template.HTML {
-	w.templateBuffer.Reset()
-	err := t.Execute(&w.templateBuffer, data)
+	w.Lock()
+	defer w.Unlock()
+
+	w.TemplateBuffer.Reset()
+	err := t.Execute(&w.TemplateBuffer, data)
 
 	if err != nil {
 		w.ContentAvailable = false
@@ -151,18 +175,18 @@ func (w *widgetBase) render(data any, t *template.Template) template.HTML {
 		// need to immediately re-render with the error,
 		// otherwise risk breaking the page since the widget
 		// will likely be partially rendered with tags not closed.
-		w.templateBuffer.Reset()
-		err2 := t.Execute(&w.templateBuffer, data)
+		w.TemplateBuffer.Reset()
+		err2 := t.Execute(&w.TemplateBuffer, data)
 
 		if err2 != nil {
 			slog.Error("failed to render error within widget", "error", err2, "initial_error", err)
-			w.templateBuffer.Reset()
+			w.TemplateBuffer.Reset()
 			// TODO: add some kind of a generic widget error template when the widget
 			// failed to render, and we also failed to re-render the widget with the error
 		}
 	}
 
-	return template.HTML(w.templateBuffer.String())
+	return template.HTML(w.TemplateBuffer.String())
 }
 
 func (w *widgetBase) withTitle(title string) *widgetBase {
@@ -174,19 +198,19 @@ func (w *widgetBase) withTitle(title string) *widgetBase {
 }
 
 func (w *widgetBase) withCacheDuration(duration time.Duration) *widgetBase {
-	w.cacheType = cacheTypeDuration
+	w.CacheType = cacheTypeDuration
 
 	if duration == -1 || w.CustomCacheDuration == 0 {
-		w.cacheDuration = duration
+		w.CacheDuration = duration
 	} else {
-		w.cacheDuration = time.Duration(w.CustomCacheDuration)
+		w.CacheDuration = time.Duration(w.CustomCacheDuration)
 	}
 
 	return w
 }
 
 func (w *widgetBase) withCacheOnTheHour() *widgetBase {
-	w.cacheType = cacheTypeOnTheHour
+	w.CacheType = cacheTypeOnTheHour
 
 	return w
 }
@@ -244,11 +268,11 @@ func (w *widgetBase) canContinueUpdateAfterHandlingErr(err error) bool {
 func (w *widgetBase) getNextUpdateTime() time.Time {
 	now := time.Now()
 
-	if w.cacheType == cacheTypeDuration {
-		return now.Add(w.cacheDuration)
+	if w.CacheType == cacheTypeDuration {
+		return now.Add(w.CacheDuration)
 	}
 
-	if w.cacheType == cacheTypeOnTheHour {
+	if w.CacheType == cacheTypeOnTheHour {
 		return now.Add(time.Duration(
 			((60-now.Minute())*60)-now.Second(),
 		) * time.Second)
@@ -258,27 +282,96 @@ func (w *widgetBase) getNextUpdateTime() time.Time {
 }
 
 func (w *widgetBase) scheduleNextUpdate() *widgetBase {
-	w.nextUpdate = w.getNextUpdateTime()
-	w.updateRetriedTimes = 0
+	w.NextUpdate = w.getNextUpdateTime()
+	w.UpdateRetriedTimes = 0
 
 	return w
 }
 
 func (w *widgetBase) scheduleEarlyUpdate() *widgetBase {
-	w.updateRetriedTimes++
+	w.UpdateRetriedTimes++
 
-	if w.updateRetriedTimes > 5 {
-		w.updateRetriedTimes = 5
+	if w.UpdateRetriedTimes > 5 {
+		w.UpdateRetriedTimes = 5
 	}
 
-	nextEarlyUpdate := time.Now().Add(time.Duration(math.Pow(float64(w.updateRetriedTimes), 2)) * time.Minute)
+	nextEarlyUpdate := time.Now().Add(time.Duration(math.Pow(float64(w.UpdateRetriedTimes), 2)) * time.Minute)
 	nextUsualUpdate := w.getNextUpdateTime()
 
 	if nextEarlyUpdate.After(nextUsualUpdate) {
-		w.nextUpdate = nextUsualUpdate
+		w.NextUpdate = nextUsualUpdate
 	} else {
-		w.nextUpdate = nextEarlyUpdate
+		w.NextUpdate = nextEarlyUpdate
 	}
 
 	return w
 }
+
+func (w *widgetBase) copyBaseStateFrom(src *widgetBase) {
+	w.ContentAvailable = src.ContentAvailable
+	w.Error = src.Error
+	w.Notice = src.Notice
+	w.TemplateBuffer.Reset()
+	if src.TemplateBuffer.Len() > 0 {
+		w.TemplateBuffer.Write(src.TemplateBuffer.Bytes())
+	}
+	w.NextUpdate = src.NextUpdate
+	w.UpdateRetriedTimes = src.UpdateRetriedTimes
+}
+
+type stateCopier interface {
+	GetBase() *widgetBase
+}
+
+func (w *widgetBase) GetBase() *widgetBase {
+	return w
+}
+
+// CopyWidgetState copies base and cached fields from src widget to dst widget.
+func CopyWidgetState(src, dst Widget) {
+	if scSrc, ok := src.(stateCopier); ok {
+		if scDst, ok := dst.(stateCopier); ok {
+			scDst.GetBase().copyBaseStateFrom(scSrc.GetBase())
+		}
+	}
+
+	srcVal := reflect.ValueOf(src).Elem()
+	dstVal := reflect.ValueOf(dst).Elem()
+
+	if srcVal.Type() != dstVal.Type() {
+		return
+	}
+
+	for i := 0; i < srcVal.NumField(); i++ {
+		field := srcVal.Type().Field(i)
+		if field.Name == "widgetBase" {
+			continue
+		}
+
+		tag := field.Tag.Get("yaml")
+		if tag == "-" {
+			srcField := srcVal.Field(i)
+			dstField := dstVal.Field(i)
+			if dstField.CanSet() {
+				dstField.Set(srcField)
+			}
+		}
+	}
+
+	// Special case for Monitor widget Sites statuses since they are nested in struct slice
+	if srcMon, ok := src.(*Monitor); ok {
+		if dstMon, ok := dst.(*Monitor); ok {
+			for i := range dstMon.Sites {
+				for j := range srcMon.Sites {
+					if dstMon.Sites[i].Url == srcMon.Sites[j].Url {
+						dstMon.Sites[i].Status = srcMon.Sites[j].Status
+						dstMon.Sites[i].StatusText = srcMon.Sites[j].StatusText
+						dstMon.Sites[i].StatusStyle = srcMon.Sites[j].StatusStyle
+						break
+					}
+				}
+			}
+		}
+	}
+}
+

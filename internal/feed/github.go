@@ -44,6 +44,8 @@ func FetchLatestReleasesFromGithub(repositories []string, token string) (AppRele
 		if token != "" {
 			request.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
 		}
+		// GitHub API requires a User-Agent header; requests without one are rejected.
+		addBrowserUserAgentHeader(request)
 
 		requests[i] = request
 	}
@@ -105,6 +107,12 @@ func FetchLatestReleasesFromGithub(repositories []string, token string) (AppRele
 	}
 
 	if len(appReleases) == 0 {
+		// Provide details of the first encountered error to assist in diagnosing connection issues
+		for _, errVal := range errs {
+			if errVal != nil {
+				return nil, fmt.Errorf("%w: %v", ErrNoContent, errVal)
+			}
+		}
 		return nil, ErrNoContent
 	}
 
@@ -164,6 +172,11 @@ func FetchRepositoryDetailsFromGithub(repository string, token string, maxPRs in
 		PRsRequest.Header.Add("Authorization", token)
 		issuesRequest.Header.Add("Authorization", token)
 	}
+
+	// GitHub API requires a User-Agent header; requests without one are rejected.
+	addBrowserUserAgentHeader(repositoryRequest)
+	addBrowserUserAgentHeader(PRsRequest)
+	addBrowserUserAgentHeader(issuesRequest)
 
 	var detailsResponse githubRepositoryDetailsResponseJson
 	var detailsErr error

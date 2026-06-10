@@ -3,6 +3,8 @@ package glance
 import (
 	"fmt"
 	"os"
+
+	"github.com/glanceapp/glance/internal/widget"
 )
 
 func Main() int {
@@ -29,14 +31,35 @@ func Main() int {
 	}
 
 	if options.Intent == CliIntentServe {
-		app, err := NewApplication(config)
+		// Initialize the SQLite settings database
+		if err := initDB(options.ConfigPath); err != nil {
+			fmt.Printf("failed to initialize database: %v\n", err)
+			return 1
+		}
+
+		// Wire Spotify authorized callback check
+		widget.SpotifyAuthorizedCheck = func() bool {
+			auth, _ := dbGetSetting("spotify_authorized", "false")
+			return auth == "true"
+		}
+
+		// Initialize WebSocket hub
+		initWebSocket()
+
+		// Initialize Spotify client credentials
+		InitSpotify(config.Spotify.ClientID, config.Spotify.ClientSecret, config.Spotify.RedirectURL)
+
+		// Start Spotify poller
+		StartSpotifyPoller()
+
+		app, err := NewApplication(config, options.ConfigPath)
 
 		if err != nil {
 			fmt.Printf("failed creating application: %v\n", err)
 			return 1
 		}
 
-		if app.Serve() != nil {
+		if err := app.Serve(); err != nil {
 			fmt.Printf("http server error: %v\n", err)
 			return 1
 		}

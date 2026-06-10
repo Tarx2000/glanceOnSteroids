@@ -24,7 +24,6 @@ type stockResponseJson struct {
 	} `json:"chart"`
 }
 
-// TODO: allow changing chart time frame
 const stockChartDays = 21
 
 func FetchStocksDataFromYahoo(stockRequests Stocks) (Stocks, error) {
@@ -32,6 +31,7 @@ func FetchStocksDataFromYahoo(stockRequests Stocks) (Stocks, error) {
 
 	for i := range stockRequests {
 		request, _ := http.NewRequest("GET", fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?range=1mo&interval=1d", stockRequests[i].Symbol), nil)
+		addBrowserUserAgentHeader(request)
 		requests = append(requests, request)
 	}
 
@@ -60,35 +60,47 @@ func FetchStocksDataFromYahoo(stockRequests Stocks) (Stocks, error) {
 			continue
 		}
 
-		prices := response.Chart.Result[0].Indicators.Quote[0].Close
+		result := response.Chart.Result[0]
+
+		if len(result.Indicators.Quote) == 0 {
+			failed++
+			slog.Error("Stock response contains no quote data", "symbol", stockRequests[i].Symbol)
+			continue
+		}
+
+		prices := result.Indicators.Quote[0].Close
 
 		if len(prices) > stockChartDays {
 			prices = prices[len(prices)-stockChartDays:]
 		}
 
-		previous := response.Chart.Result[0].Meta.RegularMarketPrice
+		currentPrice := result.Meta.RegularMarketPrice
+		if currentPrice == 0 {
+			currentPrice = result.Meta.ChartPreviousClose
+		}
 
+		previous := result.Meta.ChartPreviousClose
 		if len(prices) >= 2 && prices[len(prices)-2] != 0 {
 			previous = prices[len(prices)-2]
 		}
 
 		points := SvgPolylineCoordsFromYValues(100, 50, maybeCopySliceWithoutZeroValues(prices))
 
-		currency, exists := currencyToSymbol[response.Chart.Result[0].Meta.Currency]
+		currency, exists := currencyToSymbol[result.Meta.Currency]
 
 		if !exists {
-			currency = response.Chart.Result[0].Meta.Currency
+			currency = result.Meta.Currency
 		}
 
 		stocks = append(stocks, Stock{
 			Name:       stockRequests[i].Name,
-			Symbol:     response.Chart.Result[0].Meta.Symbol,
+			Symbol:     result.Meta.Symbol,
 			SymbolLink: stockRequests[i].SymbolLink,
 			ChartLink:  stockRequests[i].ChartLink,
-			Price:      response.Chart.Result[0].Meta.RegularMarketPrice,
+			Price:      currentPrice,
 			Currency:   currency,
 			PercentChange: percentChange(
-				response.Chart.Result[0].Meta.RegularMarketPrice,
+				currentPrice,
 				previous,
 			),
 			SvgChartPoints: points,

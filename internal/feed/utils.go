@@ -14,6 +14,9 @@ var (
 )
 
 func percentChange(current, previous float64) float64 {
+	if previous == 0 {
+		return 0
+	}
 	return (current/previous - 1) * 100
 }
 

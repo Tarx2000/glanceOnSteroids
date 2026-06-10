@@ -2,6 +2,12 @@
 <div class="mobile-reachability-header">{{ .Page.Title }}</div>
 {{ end }}
 
+<div class="page-column-head page-head-widgets" data-col-index="head">
+    {{ range .Page.HeadWidgets }}
+        {{ .Render }}
+    {{ end }}
+</div>
+
 <div class="page-columns">
 {{ range .Page.Columns }}
     <div class="page-column page-column-{{ .Size }}">

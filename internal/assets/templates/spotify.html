@@ -1,0 +1,123 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+<div class="spotify-widget-container" id="spotify-player">
+    <style>
+        .spotify-widget-container {
+            font-family: inherit;
+            padding: 8px;
+        }
+        .spotify-btn {
+            background-color: var(--color-positive);
+            color: #ffffff !important;
+            padding: 8px 16px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-weight: bold;
+            display: inline-block;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+            transition: transform 0.2s ease, background-color 0.2s ease;
+        }
+        .spotify-btn:hover {
+            transform: scale(1.03);
+            filter: brightness(1.1);
+        }
+        .spotify-control-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: inherit;
+            opacity: 0.8;
+            transition: opacity 0.2s ease, color 0.2s ease, transform 0.1s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .spotify-control-btn:hover {
+            opacity: 1;
+            color: var(--color-primary);
+            transform: scale(1.08);
+        }
+        .spotify-control-btn:active {
+            transform: scale(0.95);
+        }
+        .spotify-progress-bar-container {
+            background-color: var(--color-widget-content-border);
+            height: 4px;
+            border-radius: 2px;
+            width: 100%;
+            position: relative;
+            overflow: hidden;
+        }
+        .spotify-progress-bar-fill {
+            background-color: var(--color-positive);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .spotify-volume-slider-input {
+            flex-grow: 1;
+            accent-color: var(--color-positive);
+            height: 4px;
+            cursor: pointer;
+            outline: none;
+            background: var(--color-widget-content-border);
+            border-radius: 2px;
+        }
+    </style>
+
+    <!-- Spotify login redirection UI -->
+    <div id="spotify-login-prompt" style="{{ if .IsAuthorized }}display: none;{{ else }}display: block;{{ end }} text-align: center; padding: 25px 10px;">
+        <p style="margin-bottom: 16px; font-size: 0.9em; opacity: 0.85;">Spotify playback controls require authorization</p>
+        <a href="/api/spotify/login" class="spotify-btn">CONNECT SPOTIFY</a>
+        <p id="spotify-redirect-hint" style="margin-top: 14px; font-size: 0.75em; opacity: 0.45; word-break: break-all;"></p>
+    </div>
+    
+    <!-- Spotify active playback interface -->
+    <div id="spotify-player-content" style="{{ if .IsAuthorized }}display: block;{{ else }}display: none;{{ end }}">
+        <div style="display: flex; gap: 15px; align-items: center;">
+            <img id="spotify-album-art" src="" alt="Album Art" style="width: 70px; height: 70px; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background-color: #242424; object-fit: cover;" />
+            <div style="flex-grow: 1; min-width: 0;">
+                <div id="spotify-track-title" style="font-weight: bold; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary);">Not Playing</div>
+                <div id="spotify-track-artist" style="font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.8; margin-top: 3px;">Unknown Artist</div>
+                <div id="spotify-track-album" style="font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.6; margin-top: 2px;">Unknown Album</div>
+            </div>
+        </div>
+        
+        <!-- Playback progress bar -->
+        <div style="margin-top: 12px;">
+            <div class="spotify-progress-bar-container" id="spotify-progress-bar">
+                <div id="spotify-progress-fill" class="spotify-progress-bar-fill"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.75em; opacity: 0.6; margin-top: 4px;">
+                <span id="spotify-time-progress">0:00</span>
+                <span id="spotify-time-duration">0:00</span>
+            </div>
+        </div>
+
+        <!-- Audio controls -->
+        <div style="display: flex; justify-content: center; align-items: center; gap: 24px; margin-top: 8px;">
+            <button id="spotify-btn-prev" class="spotify-control-btn" title="Previous Track">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button id="spotify-btn-play-pause" class="spotify-control-btn" title="Play/Pause" style="color: var(--color-primary);">
+                <!-- Play Icon -->
+                <svg id="spotify-icon-play" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                <!-- Pause Icon -->
+                <svg id="spotify-icon-pause" viewBox="0 0 24 24" width="28" height="28" fill="currentColor" style="display: none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            </button>
+            <button id="spotify-btn-next" class="spotify-control-btn" title="Next Track">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 18l8.5-6L6 6zm9-12v12h2V6z"/></svg>
+            </button>
+        </div>
+
+        <!-- Volume adjust -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 0 4px;">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="opacity: 0.6;"><path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
+            <input type="range" id="spotify-volume-slider" class="spotify-volume-slider-input" min="0" max="100" value="50" />
+            <span id="spotify-volume-val" style="font-size: 0.75em; opacity: 0.6; width: 28px; text-align: right;">50%</span>
+        </div>
+    </div>
+</div>
+{{ end }}

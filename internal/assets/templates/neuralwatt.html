@@ -1,0 +1,104 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+{{ if .Summary }}
+<div class="nw-widget" data-nw-expanded="false">
+  <div class="nw-hero">
+    <div class="nw-hero-label">Total Cost (30d)</div>
+    <div class="nw-hero-value">{{ printf "$%.2f" .Summary.Totals.TotalCostUSD }}</div>
+
+  </div>
+
+  <div class="nw-stats-grid">
+    {{ if .Energy }}
+    <div class="nw-stat">
+      <div class="nw-stat-value">{{ printf "%.4f" .Energy.Totals.EnergyKwh }} kWh</div>
+      <div class="nw-stat-label">Energy Used</div>
+    </div>
+    {{ else }}
+    <div class="nw-stat">
+      <div class="nw-stat-value">{{ formatNumber .Summary.Totals.TotalTokens }}</div>
+      <div class="nw-stat-label">Total Tokens</div>
+    </div>
+    {{ end }}
+    <div class="nw-stat">
+      <div class="nw-stat-value">{{ formatNumber .Summary.Totals.TotalTokens }}</div>
+      <div class="nw-stat-label">Total Tokens</div>
+    </div>
+  </div>
+
+  <div class="nw-today">
+    <div class="nw-today-title">Today</div>
+    <div class="nw-today-row">
+      <span class="nw-today-label">Cost</span>
+      <span class="nw-today-value">{{ printf "$%.2f" .TodayCost }}</span>
+    </div>
+    {{ if .Energy }}
+    <div class="nw-today-row">
+      <span class="nw-today-label">Energy</span>
+      <span class="nw-today-value">{{ printf "%.4f" .TodayEnergyKwh }} kWh</span>
+    </div>
+    {{ end }}
+    <div class="nw-today-row">
+      <span class="nw-today-label">Tokens</span>
+      <span class="nw-today-value">{{ formatNumber .TodayTokens }}</span>
+    </div>
+
+  </div>
+
+  <div class="nw-details" style="display:none;">
+    {{ if .Summary.Totals.CachedTokens }}
+    <div class="nw-cached-row">
+      <span class="nw-cached-label">Cached Tokens</span>
+      <span class="nw-cached-value">{{ formatNumber .Summary.Totals.CachedTokens }}</span>
+    </div>
+    {{ end }}
+
+    {{ if .DailyChartData }}
+    <div class="nw-chart-section">
+      <div class="nw-chart-title">Daily Usage</div>
+      <div class="nw-chart">
+        {{ range .DailyChartData }}
+        <div class="nw-chart-bar-group">
+          <div class="nw-chart-bar-container">
+            <div class="nw-chart-bar" style="height: {{ .HeightPct }}%"></div>
+          </div>
+          <div class="nw-chart-date">{{ .DateLabel }}</div>
+          <div class="nw-chart-tooltip">
+            <div>{{ formatNumber .Requests }} requests</div>
+            <div>{{ printf "$%.2f" .CostUSD }}</div>
+          </div>
+        </div>
+        {{ end }}
+      </div>
+    </div>
+    {{ end }}
+
+    {{ if .EnergyChartData }}
+    <div class="nw-energy-section">
+      <div class="nw-energy-title">Daily Energy (kWh)</div>
+      <div class="nw-energy-chart">
+        {{ range .EnergyChartData }}
+        <div class="nw-energy-bar-group">
+          <div class="nw-energy-bar-container">
+            <div class="nw-energy-bar" style="height: {{ .HeightPct }}%"></div>
+          </div>
+          <div class="nw-energy-date">{{ .DateLabel }}</div>
+        </div>
+        {{ end }}
+      </div>
+    </div>
+    {{ end }}
+  </div>
+
+  <button class="nw-toggle" onclick="
+    var w=this.closest('.nw-widget');
+    var d=w.querySelector('.nw-details');
+    var exp=w.getAttribute('data-nw-expanded')==='true';
+    w.setAttribute('data-nw-expanded',!exp);
+    d.style.display=exp?'none':'block';
+    this.textContent=exp?'Show more':'Show less';
+  ">Show more</button>
+</div>
+{{ end }}
+{{ end }}

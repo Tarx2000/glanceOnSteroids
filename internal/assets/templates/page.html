@@ -1,6 +1,6 @@
 {{ template "document.html" . }}
 
-{{ define "document-title" }}{{ .Page.Title }} - Glance{{ end }}
+{{ define "document-title" }}{{ .Page.Title }} - {{ if .App.Config.Branding.AppName }}{{ .App.Config.Branding.AppName }}{{ else }}Glance{{ end }}{{ end }}
 
 {{ define "document-head-before" }}
 <script>
@@ -27,10 +27,30 @@
 {{ define "document-body" }}
 <div class="header-container content-bounds">
     <div class="header flex padding-inline-widget widget-content-frame">
-        <!-- TODO: Replace G with actual logo, first need an actual logo -->
-        <div class="logo">G</div>
-        <div class="nav flex grow">
+        <!-- Logo -->
+        <div id="logo-g" class="logo" style="cursor: pointer;" title="System Settings">{{ if .App.Config.Branding.AppName }}{{ slice .App.Config.Branding.AppName 0 1 }}{{ else }}G{{ end }}</div>
+        <div class="nav flex grow {{ if .Page.HideDesktopNavigation }}hide-desktop-nav{{ end }}" style="align-items: center; display: flex; gap: var(--header-items-gap);">
             {{ template "navigation-links" . }}
+            <button id="btn-add-page" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: 1.8rem; color: var(--color-primary); line-height: 1; padding: 0 10px; margin-bottom: 3px;" title="Add Dashboard">+</button>
+        </div>
+        <!-- Layout Edit Mode Controls -->
+        <div class="header-edit-controls" style="display: flex; align-items: center; gap: 15px;">
+            <select id="select-page-layout" class="nav-item" style="display: none; cursor: pointer; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; padding: 4px 8px;">
+                <option value="full">1 Column (Full)</option>
+                <option value="small,full">2 Columns (Small, Full)</option>
+                <option value="full,small">2 Columns (Full, Small)</option>
+                <option value="full,full">2 Columns (Full, Full)</option>
+                <option value="small,small,full">3 Columns (Small, Small, Full)</option>
+                <option value="small,full,small">3 Columns (Small, Full, Small)</option>
+                <option value="full,small,small">3 Columns (Full, Small, Small)</option>
+                <option value="small,full,full">3 Columns (Small, Full, Full)</option>
+                <option value="full,full,small">3 Columns (Full, Full, Small)</option>
+            </select>
+            <button id="btn-edit-layout" class="nav-item" style="cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: inherit;">Edit Layout</button>
+            <button id="btn-add-widget" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: inherit;">Add Widget</button>
+            <button id="btn-undo-layout" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: var(--color-text-subdue); opacity: 0.5;" title="Undo (Ctrl+Z)">Undo</button>
+            <button id="btn-save-layout" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: var(--color-primary); font-weight: bold;">Save</button>
+            <button id="btn-cancel-layout" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: var(--color-negative);">Cancel</button>
         </div>
     </div>
 </div>
@@ -39,31 +59,212 @@
     <div class="mobile-navigation-icons">
         <a class="mobile-navigation-label" href="#top">↑</a>
         {{ range $i, $column := .Page.Columns }}
-        <label class="mobile-navigation-label"><input type="radio" class="mobile-navigation-input" name="column" value="{{ $i }}" autocomplete="off"{{ if eq "full" $column.Size }} checked{{ end }}><div class="mobile-navigation-pill"></div></label>
+        <label class="mobile-navigation-label"><input type="radio" class="mobile-navigation-input" name="column" value="{{ $i }}" autocomplete="off"{{ if eq $i 0 }} checked{{ end }}><div class="mobile-navigation-pill"></div></label>
         {{ end }}
         <label class="mobile-navigation-label"><input type="checkbox" class="mobile-navigation-page-links-input" autocomplete="on"><div class="hamburger-icon"></div></label>
     </div>
     <div class="mobile-navigation-page-links">
         {{ template "navigation-links" . }}
+        <hr style="margin-block: 10px; border: 0; border-top: 1px solid var(--color-widget-content-border); width: 100%;">
+        <a href="#" class="nav-item mobile-non-edit-only" id="mobile-btn-edit-layout">Edit Layout</a>
+        <a href="#" class="nav-item mobile-edit-only" id="mobile-btn-add-widget" style="color: var(--color-primary);">Add Widget</a>
+        <a href="#" class="nav-item mobile-edit-only" id="mobile-btn-save-layout" style="color: var(--color-primary); font-weight: bold;">Save Layout</a>
+        <a href="#" class="nav-item mobile-edit-only" id="mobile-btn-cancel-layout" style="color: var(--color-negative);">Cancel Edit</a>
+        <a href="#" class="nav-item" id="mobile-btn-settings">System Settings</a>
     </div>
 </div>
 
 <div class="content-bounds">
     <div class="page" id="page">
         <div class="page-loading-container">
-            <!-- TODO: add a bigger/better loading indicator -->
+            <!-- Loading indicator -->
             <div class="loading-icon"></div>
         </div>
     </div>
 </div>
 
-<div class="footer flex items-center flex-column">
-    <div>
-        <span class="size-h3">Glance</span> ({{ .App.Version }})
+<!-- Add Widget Dialog/Modal -->
+<div id="add-widget-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+    <div style="background: var(--color-widget-background); border: 1px solid var(--color-widget-content-border); border-radius: var(--border-radius); padding: 25px; width: 450px; max-width: 92%; box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-family: inherit;">
+        <h3 style="margin-bottom: 20px; font-size: 1.4rem; color: var(--color-text-highlight); border-bottom: 1px solid var(--color-separator); padding-bottom: 10px;">Add Widget</h3>
+        <form id="add-widget-form">
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 6px; font-size: 0.9em; opacity: 0.85;">Widget Type</label>
+                <select id="widget-type-select" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="weather">Weather</option>
+                    <option value="bookmarks">Bookmarks</option>
+                    <option value="iframe">IFrame</option>
+                    <option value="hacker-news">Hacker News</option>
+                    <option value="releases">Releases</option>
+                    <option value="videos">Videos</option>
+                    <option value="stocks">Stocks (Markets)</option>
+                    <option value="reddit">Reddit</option>
+                    <option value="rss">RSS Feed</option>
+                    <option value="monitor">Monitor Site</option>
+                    <option value="twitch-top-games">Twitch Top Games</option>
+                    <option value="twitch-channels">Twitch Channels</option>
+                    <option value="repository">GitHub Repository</option>
+                    <option value="spotify">Spotify Player</option>
+                    <option value="neuralwatt">NeuralWatt Usage</option>
+                    <option value="group">Group Container</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 6px; font-size: 0.9em; opacity: 0.85;">Target Column</label>
+                <select id="widget-column-select" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <!-- Populated dynamically -->
+                </select>
+            </div>
+            
+            <div id="widget-fields-container" style="margin-bottom: 20px; border-top: 1px dashed var(--color-separator); padding-top: 15px;">
+                <!-- Populated dynamically based on selected type -->
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--color-separator); padding-top: 15px;">
+                <button type="button" id="btn-modal-cancel" style="padding: 8px 16px; background: none; border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; cursor: pointer; font-family: inherit;">Cancel</button>
+                <button type="submit" style="padding: 8px 16px; background: var(--color-primary); border: none; border-radius: 4px; color: #fff; cursor: pointer; font-weight: bold; font-family: inherit;">Add</button>
+            </div>
+        </form>
     </div>
-    <ul class="list-horizontal-text margin-top-5 size-h5 color-primary">
-        <li><a href="https://github.com/glanceapp/glance/issues" target="_blank" rel="noreferrer">Report issue</a></li>
-        <li><a href="https://github.com/glanceapp/glance/discussions" target="_blank" rel="noreferrer">Submit feedback</a></li>
-    </ul>
+</div>
+
+<!-- Edit Widget Dialog/Modal -->
+<div id="edit-widget-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+    <div style="background: var(--color-widget-background); border: 1px solid var(--color-widget-content-border); border-radius: var(--border-radius); padding: 25px; width: 450px; max-width: 92%; box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-family: inherit; max-height: 90vh; overflow-y: auto; scrollbar-width: thin;">
+        <h3 id="edit-widget-title" style="margin-bottom: 20px; font-size: 1.4rem; color: var(--color-text-highlight); border-bottom: 1px solid var(--color-separator); padding-bottom: 10px;">Edit Widget</h3>
+        <form id="edit-widget-form">
+            <input type="hidden" id="edit-widget-col" />
+            <input type="hidden" id="edit-widget-idx" />
+            <input type="hidden" id="edit-widget-nested-idx" />
+            <input type="hidden" id="edit-widget-type" />
+            
+            <div id="edit-widget-fields-container" style="margin-bottom: 20px;">
+                <!-- Populated dynamically based on widget type and current values -->
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--color-separator); padding-top: 15px;">
+                <button type="button" id="btn-edit-modal-cancel" style="padding: 8px 16px; background: none; border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; cursor: pointer; font-family: inherit;">Cancel</button>
+                <button type="submit" style="padding: 8px 16px; background: var(--color-primary); border: none; border-radius: 4px; color: #fff; cursor: pointer; font-weight: bold; font-family: inherit;">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Settings Dialog/Modal -->
+<div id="settings-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+    <div style="background: var(--color-widget-background); border: 1px solid var(--color-widget-content-border); border-radius: var(--border-radius); padding: 25px; width: 550px; max-width: 92%; max-height: 90vh; overflow-y: auto; box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-family: inherit; scrollbar-width: thin;">
+        <h3 style="margin-bottom: 20px; font-size: 1.4rem; color: var(--color-text-highlight); border-bottom: 1px solid var(--color-separator); padding-bottom: 10px;">System Settings</h3>
+        <form id="settings-form">
+            <!-- Branding Settings -->
+            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary);">Branding</h4>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Application Name</label>
+                <input type="text" name="branding_app_name" placeholder="Glance" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Custom Footer HTML</label>
+                <textarea name="branding_custom_footer" placeholder="e.g. <p>My Footer</p>" style="width: 100%; height: 60px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; resize: vertical; outline: none;"></textarea>
+            </div>
+
+            <!-- Server Settings -->
+            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary);">Server Configuration</h4>
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Host (Interface)</label>
+                    <input type="text" name="server_host" placeholder="127.0.0.1" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+                <div style="width: 100px;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Port</label>
+                    <input type="number" name="server_port" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Assets Path</label>
+                <input type="text" name="server_assets_path" placeholder="e.g. ./assets" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+
+            <!-- Spotify Credentials -->
+            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Spotify Credentials</h4>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Spotify Client ID</label>
+                <input type="text" name="spotify_client_id" placeholder="Your Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Spotify Client Secret</label>
+                <input type="password" name="spotify_client_secret" placeholder="Your Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Spotify Redirect URL</label>
+                <input type="url" name="spotify_redirect_url" placeholder="http://localhost:8086/api/spotify/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+
+            <!-- Theme Aesthetics -->
+            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Theme & Aesthetics</h4>
+            <div style="margin-bottom: 15px; display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" name="theme_light" id="theme_light" style="cursor: pointer;" />
+                <label for="theme_light" style="font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">Light Color Scheme</label>
+            </div>
+            <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Background Color (H S L)</label>
+                    <input type="text" name="theme_background_color" placeholder="e.g. 240 8 9" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Primary Color (H S L)</label>
+                    <input type="text" name="theme_primary_color" placeholder="e.g. 43 50 70" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+            </div>
+            <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Positive Color (H S L)</label>
+                    <input type="text" name="theme_positive_color" placeholder="e.g. 120 40 40" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+                <div style="flex: 1; min-width: 120px;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Negative Color (H S L)</label>
+                    <input type="text" name="theme_negative_color" placeholder="e.g. 0 70 70" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+            </div>
+            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Contrast Mult.</label>
+                    <input type="number" name="theme_contrast_multiplier" step="0.1" value="1.0" min="0.1" max="3.0" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Saturation Mult.</label>
+                    <input type="number" name="theme_text_saturation_multiplier" step="0.1" value="1.0" min="0.1" max="3.0" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+            </div>
+            <div style="margin-bottom: 25px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Custom CSS Path</label>
+                <input type="text" name="theme_custom_css_file" placeholder="e.g. /assets/style.css" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+
+            <!-- Caution Message -->
+            <p style="font-size: 0.8em; color: var(--color-negative); margin-bottom: 20px; line-height: 1.4; border: 1px solid var(--color-negative); padding: 8px; border-radius: 4px; background: rgba(255, 69, 58, 0.05);">
+                <strong>Caution:</strong> Changing the Port or Host will bind the server to the new address immediately. If you lose connection, update your browser URL accordingly.
+            </p>
+
+            <div style="display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid var(--color-separator); padding-top: 15px;">
+                <button type="button" id="btn-settings-cancel" style="padding: 8px 16px; background: none; border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; cursor: pointer; font-family: inherit;">Cancel</button>
+                <button type="submit" style="padding: 8px 16px; background: var(--color-primary); border: none; border-radius: 4px; color: #fff; cursor: pointer; font-weight: bold; font-family: inherit;">Save Settings</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<div class="footer flex items-center flex-column">
+    {{ if .App.Config.Branding.CustomFooter }}
+        {{ .App.Config.Branding.CustomFooter | safeHTML }}
+    {{ else }}
+        <div>
+            <span class="size-h3">{{ if .App.Config.Branding.AppName }}{{ .App.Config.Branding.AppName }}{{ else }}Glance{{ end }}</span>
+        </div>
+        <ul class="list-horizontal-text margin-top-5 size-h5 color-primary">
+            <li><a href="https://github.com/glanceapp/glance/issues" target="_blank" rel="noreferrer">Report issue</a></li>
+            <li><a href="https://github.com/glanceapp/glance/discussions" target="_blank" rel="noreferrer">Submit feedback</a></li>
+        </ul>
+    {{ end }}
+    <div class="margin-top-5 size-h6 color-subdue">v{{ .App.Version }}-b{{ .App.BuildNumber }}</div>
 </div>
 {{ end }}

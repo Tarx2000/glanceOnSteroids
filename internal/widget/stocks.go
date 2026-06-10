@@ -13,12 +13,17 @@ import (
 type Stocks struct {
 	widgetBase `yaml:",inline"`
 	Stocks     feed.Stocks `yaml:"stocks"`
+	Markets    feed.Stocks `yaml:"markets"`
 	Sort       string      `yaml:"sort-by"`
 	Style      string      `yaml:"style"`
 }
 
 func (widget *Stocks) Initialize() error {
-	widget.withTitle("Stocks").withCacheDuration(time.Hour)
+	widget.withTitle("Markets").withCacheDuration(time.Hour)
+
+	if len(widget.Markets) > 0 {
+		widget.Stocks = widget.Markets
+	}
 
 	return nil
 }

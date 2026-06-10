@@ -41,6 +41,11 @@ func (c *HSLColorField) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 
+	// Handle empty/unset color values gracefully to avoid format errors
+	if value == "" {
+		return nil
+	}
+
 	matches := HSLColorPattern.FindStringSubmatch(value)
 
 	if len(matches) != 4 {

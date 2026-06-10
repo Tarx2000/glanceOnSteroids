@@ -25,7 +25,8 @@ const (
 )
 
 type buildInfo struct {
-	version string
+	version    string
+	buildNumber string
 }
 
 type buildTarget struct {
@@ -103,7 +104,8 @@ func main() {
 	}
 
 	info := buildInfo{
-		version: version,
+		version:     version,
+		buildNumber: getBuildNumber(),
 	}
 
 	for _, target := range buildTargets {
@@ -174,6 +176,14 @@ func getVersionFromGit() (string, error) {
 	return string(output), err
 }
 
+func getBuildNumber() string {
+	data, err := os.ReadFile("BUILD_NUMBER")
+	if err == nil {
+		return strings.TrimSpace(string(data))
+	}
+	return "dev"
+}
+
 func archiveFile(name string, target string, t archiveType) error {
 	var output []byte
 	var err error
@@ -207,6 +217,7 @@ func build(workingDir string, info buildInfo, target buildTarget) error {
 
 	flags := "-s -w"
 	flags += fmt.Sprintf(" -X %s.buildVersion=%s", glancePackage, info.version)
+	flags += fmt.Sprintf(" -X %s.buildNumber=%s", glancePackage, info.buildNumber)
 
 	cmd := exec.Command(
 		"go",

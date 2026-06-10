@@ -7,10 +7,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type BrandingConfig struct {
+	AppName      string `yaml:"app-name"`
+	CustomFooter string `yaml:"custom-footer"`
+}
+
+type SpotifyConfig struct {
+	ClientID     string `yaml:"client-id"`
+	ClientSecret string `yaml:"client-secret"`
+	// RedirectURL is the custom redirect URI configured in the Spotify Developer Dashboard.
+	// This is useful when hosting behind a reverse proxy or on a custom port/domain.
+	RedirectURL  string `yaml:"redirect-url"`
+}
+
 type Config struct {
-	Server Server `yaml:"server"`
-	Theme  Theme  `yaml:"theme"`
-	Pages  []Page `yaml:"pages"`
+	Branding BrandingConfig `yaml:"branding"`
+	Server   Server         `yaml:"server"`
+	Theme    Theme          `yaml:"theme"`
+	Pages    []Page         `yaml:"pages"`
+	Spotify  SpotifyConfig  `yaml:"spotify"`
 }
 
 func NewConfigFromYml(contents io.Reader) (*Config, error) {

@@ -307,12 +307,6 @@ body {
     }
 }
 
-@keyframes loadingIconSpin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-
 .notice-icon {
     width: 0.7rem;
     height: 0.7rem;
@@ -999,6 +993,11 @@ body {
         animation: columnEntrance 0s cubic-bezier(0.25, 1, 0.5, 1) backwards;
     }
 
+    body.layout-edit-mode .page-column {
+        display: block !important;
+        margin-bottom: 20px;
+    }
+
     .animate-element-transition .page-column {
         animation-duration: .3s;
     }
@@ -1201,3 +1200,613 @@ body {
 .margin-bottom-10   { margin-bottom: 1rem; }
 .margin-bottom-15   { margin-bottom: 1.5rem; }
 .margin-bottom-auto { margin-bottom: auto; }
+
+/* Layout Edit Mode Styling */
+body.layout-edit-mode .widget.editable {
+    cursor: move;
+    position: relative;
+    box-shadow: 0 0 0 2px var(--color-primary);
+    border-radius: var(--border-radius);
+    transition: transform 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+body.layout-edit-mode .widget.editable > .widget-content:not(.widget-content-frameless) {
+    border: 2px dashed var(--color-primary) !important;
+    padding: calc(var(--widget-content-vertical-padding) - 1px) calc(var(--widget-content-horizontal-padding) - 1px) !important;
+    transition: border-style 0.15s ease, border-color 0.15s ease;
+}
+
+body.layout-edit-mode .widget.editable > .widget-content-frame {
+    border: 2px dashed var(--color-primary) !important;
+    transition: border-style 0.15s ease, border-color 0.15s ease;
+}
+
+body.layout-edit-mode .widget.editable:hover {
+    box-shadow: 0 0 0 3px var(--color-primary), 0 5px 18px rgba(0, 0, 0, 0.3) !important;
+    filter: brightness(1.05);
+}
+
+body.layout-edit-mode .widget.editable:hover > .widget-content:not(.widget-content-frameless) {
+    border-style: solid !important;
+}
+
+body.layout-edit-mode .widget.editable:hover > .widget-content-frame {
+    border-style: solid !important;
+}
+
+/* When a nested widget inside a group is hovered, suppress the group's own hover effect
+   so the nested widget's hover is the clear visual focus */
+body.layout-edit-mode .widget.widget-type-group.editable:has(> .widget-group > .widget:hover) {
+    box-shadow: 0 0 0 2px var(--color-primary) !important;
+    filter: none !important;
+}
+
+body.layout-edit-mode .widget.widget-type-group.editable:has(> .widget-group > .widget:hover) > .widget-content:not(.widget-content-frameless),
+body.layout-edit-mode .widget.widget-type-group.editable:has(> .widget-group > .widget:hover) > .widget-content-frame {
+    border-style: dashed !important;
+}
+
+body.layout-edit-mode .widget.dragging {
+    opacity: 0.4 !important;
+    transform: rotate(2deg) scale(0.98);
+    box-shadow: 0 0 0 3px var(--color-primary), 0 8px 25px rgba(0, 0, 0, 0.35) !important;
+}
+
+body.layout-edit-mode .widget.dragging > .widget-content:not(.widget-content-frameless) {
+    border: 2.5px solid var(--color-primary) !important;
+}
+
+body.layout-edit-mode .page-column {
+    min-height: 200px;
+    border: 1px dashed var(--color-widget-content-border);
+    border-radius: var(--border-radius);
+    padding: 10px;
+    background-color: rgba(128, 128, 128, 0.03);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+body.layout-edit-mode .page-column:hover {
+    border-color: var(--color-primary);
+    background-color: rgba(128, 128, 128, 0.06);
+}
+
+/* Container for edit and delete action buttons, shown only in edit mode */
+.widget-edit-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* Edit (pencil) button in widget header */
+.widget-edit-btn {
+    opacity: 0.7;
+    transition: opacity 0.2s ease, color 0.2s ease, transform 0.15s ease, background 0.2s ease;
+}
+
+.widget-edit-btn:hover {
+    color: var(--color-primary) !important;
+    opacity: 1;
+    transform: scale(1.15);
+    background: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Delete (trash) button in widget header */
+.widget-delete-btn {
+    opacity: 0.7;
+    transition: opacity 0.2s ease, color 0.2s ease, transform 0.15s ease, background 0.2s ease;
+}
+
+.widget-delete-btn:hover {
+    color: var(--color-negative) !important;
+    opacity: 1;
+    transform: scale(1.15);
+    background: rgba(128, 128, 128, 0.1) !important;
+}
+
+/* Settings Modal and form styling */
+#settings-modal {
+    transition: opacity 0.3s ease;
+}
+
+#settings-modal .modal-content {
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: var(--border-radius);
+    padding: 25px;
+    width: 550px;
+    max-width: 92%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    font-family: inherit;
+    scrollbar-width: thin;
+}
+
+#settings-modal input[type="text"],
+#settings-modal input[type="number"],
+#settings-modal input[type="password"],
+#settings-modal select {
+    transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+#settings-modal input[type="text"]:focus,
+#settings-modal input[type="number"]:focus,
+#settings-modal input[type="password"]:focus,
+#settings-modal select:focus {
+    border-color: var(--color-primary) !important;
+    box-shadow: 0 0 0 2px rgba(var(--color-primary-rgb, 67, 50, 70), 0.25);
+    outline: none;
+}
+
+#settings-modal button {
+    transition: background 0.25s ease, opacity 0.25s ease, transform 0.1s ease;
+}
+
+#settings-modal button:active {
+    transform: scale(0.98);
+}
+
+#btn-add-page {
+    transition: color 0.25s ease, transform 0.25s ease;
+}
+#btn-add-page:hover {
+    color: var(--color-text-highlight) !important;
+    transform: scale(1.25);
+}
+
+/* Hide desktop navigation classes */
+@media (min-width: 800px) {
+    .hide-desktop-nav {
+        display: none !important;
+    }
+}
+
+/* Page head widgets and groups */
+.page-head-widgets {
+    width: 100%;
+    margin-bottom: 25px;
+}
+
+.page-head-widgets .widget-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--column-items-gap, 20px);
+    width: 100%;
+}
+
+.widget-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--column-items-gap, 20px);
+    width: 100%;
+}
+
+/* Clock widget styling */
+.clock-widget {
+    text-align: center;
+    padding: 10px 0;
+}
+.clock-time {
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-text-highlight);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 5px;
+}
+.clock-date {
+    font-size: 1rem;
+    color: var(--color-primary);
+    font-weight: 500;
+}
+
+/* ----------------------------------------------------
+   Steroids Layout Editor & Compatibility Style Fixes
+   ---------------------------------------------------- */
+
+/* Override hide-desktop-nav when in edit mode so navigation + button can be accessed */
+body.layout-edit-mode .hide-desktop-nav {
+    display: flex !important;
+}
+
+/* Prevent widget and grid children overflow (critical for RSS / Videos carousels) */
+.widget {
+    min-width: 0;
+}
+.widget-group > *, .page-head-widgets .widget-group > * {
+    min-width: 0;
+}
+
+/* Hide Group widget header when not in layout edit mode */
+body:not(.layout-edit-mode) .group-only-header {
+    display: none !important;
+}
+
+/* Style head widgets container in edit mode as a visible, targetable dashed drop zone */
+body.layout-edit-mode .page-column-head {
+    min-height: 100px;
+    border: 1px dashed var(--color-widget-content-border) !important;
+    border-radius: var(--border-radius);
+    padding: 15px !important;
+    background-color: rgba(128, 128, 128, 0.03) !important;
+    margin-bottom: 25px !important;
+    display: block !important;
+}
+.page-column-head:empty {
+    display: none;
+}
+body.layout-edit-mode .page-column-head:empty {
+    display: block !important;
+}
+
+/* Group widget: add padding so nested widgets don't touch the group's box-shadow ring */
+body.layout-edit-mode .widget.widget-type-group > .widget-group {
+    padding: 10px;
+    background-color: rgba(128, 128, 128, 0.03);
+    box-sizing: border-box;
+}
+
+/* Style empty nested widget groups inside Group widgets in edit mode */
+body.layout-edit-mode .widget.widget-type-group > .widget-group:empty {
+    min-height: 60px;
+    border: 1px dashed var(--color-widget-content-border);
+    background-color: rgba(128, 128, 128, 0.03);
+    margin-top: 10px;
+}
+
+/* Thin horizontal line drag and drop insertion placeholder */
+.widget-placeholder {
+    height: 6px;
+    background-color: var(--color-primary);
+    border-radius: var(--border-radius);
+    margin: 8px 0;
+    box-sizing: border-box;
+    box-shadow: 0 0 6px var(--color-primary);
+}
+
+/* Mobile edit controls display rules */
+body:not(.layout-edit-mode) .mobile-edit-only {
+    display: none !important;
+}
+body.layout-edit-mode .mobile-edit-only {
+    display: block !important;
+}
+body.modal-open .mobile-navigation {
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+body.modal-open {
+    overflow: hidden;
+}
+
+/* ----------------------------------------------------
+   Toast Notification System
+   ---------------------------------------------------- */
+
+.toast-container {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.toast {
+    padding: 12px 18px;
+    border-radius: var(--border-radius);
+    font-size: var(--font-size-base);
+    color: var(--color-text-highlight);
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-widget-content-border);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    min-width: 260px;
+    max-width: 400px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: toastSlideIn 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.toast-close {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.5;
+    font-size: 0.85rem;
+    padding: 0 4px;
+    flex-shrink: 0;
+    font-family: inherit;
+}
+
+.toast-close:hover {
+    opacity: 1;
+}
+
+.toast-success { border-left: 4px solid var(--color-positive); }
+.toast-error   { border-left: 4px solid var(--color-negative); }
+.toast-info    { border-left: 4px solid var(--color-primary); }
+
+.toast-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.toast-success .toast-icon { color: var(--color-positive); }
+.toast-error   .toast-icon { color: var(--color-negative); }
+.toast-info    .toast-icon { color: var(--color-primary); }
+
+@keyframes toastSlideIn {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.nw-widget {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.nw-hero {
+    text-align: center;
+    padding: 8px 0 4px;
+    border-bottom: 1px solid var(--color-widget-content-border);
+    margin-bottom: 2px;
+}
+
+.nw-hero-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.5;
+    margin-bottom: 6px;
+}
+
+.nw-hero-value {
+    font-size: 2.2rem;
+    font-weight: 800;
+    color: var(--color-text-highlight);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
+.nw-hero-sub {
+    font-size: 0.7rem;
+    opacity: 0.4;
+    margin-top: 6px;
+    letter-spacing: 0.04em;
+}
+
+.nw-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.nw-stat {
+    background: var(--color-widget-background);
+    border-radius: var(--border-radius);
+    padding: 10px 12px;
+    border: 1px solid var(--color-widget-content-border);
+}
+
+.nw-stat-value {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--color-text-highlight);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nw-stat-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.5;
+    margin-top: 2px;
+}
+
+.nw-cached-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: var(--border-radius);
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-widget-content-border);
+    font-size: 0.8rem;
+}
+
+.nw-cached-label {
+    opacity: 0.6;
+}
+
+.nw-cached-value {
+    color: var(--color-text-highlight);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.nw-cached-pct {
+    margin-left: auto;
+    color: var(--color-positive);
+    font-weight: 600;
+    font-size: 0.75rem;
+}
+
+.nw-chart-section,
+.nw-energy-section {
+    margin-top: 4px;
+}
+
+.nw-chart-title,
+.nw-energy-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.5;
+    margin-bottom: 8px;
+}
+
+.nw-chart,
+.nw-energy-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 80px;
+    padding-bottom: 20px;
+    position: relative;
+}
+
+.nw-chart-bar-group,
+.nw-energy-bar-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    position: relative;
+}
+
+.nw-chart-bar-container,
+.nw-energy-bar-container {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    min-height: 0;
+}
+
+.nw-chart-bar {
+    width: 100%;
+    min-height: 2px;
+    background: var(--color-primary);
+    border-radius: 3px 3px 0 0;
+    transition: height 0.3s ease;
+    opacity: 0.85;
+}
+
+.nw-energy-bar {
+    width: 100%;
+    min-height: 2px;
+    background: var(--color-positive);
+    border-radius: 3px 3px 0 0;
+    transition: height 0.3s ease;
+    opacity: 0.7;
+}
+
+.nw-chart-date,
+.nw-energy-date {
+    font-size: 0.6rem;
+    opacity: 0.4;
+    position: absolute;
+    bottom: -16px;
+    white-space: nowrap;
+}
+
+.nw-chart-bar-group {
+    cursor: default;
+}
+
+.nw-chart-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: var(--border-radius);
+    padding: 6px 10px;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    pointer-events: none;
+}
+
+.nw-chart-bar-group:hover .nw-chart-tooltip {
+    display: block;
+}
+
+.nw-chart-bar-group:hover .nw-chart-bar {
+    opacity: 1;
+}
+
+.nw-toggle {
+    background: none;
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: var(--border-radius);
+    color: var(--color-text-subdue);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    text-align: center;
+    transition: color 0.15s, border-color 0.15s;
+    width: 100%;
+}
+
+.nw-toggle:hover {
+    color: var(--color-text-highlight);
+    border-color: var(--color-text-subdue);
+}
+
+.nw-today {
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: var(--border-radius);
+    padding: 8px 10px;
+}
+
+.nw-today-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.5;
+    margin-bottom: 6px;
+}
+
+.nw-today-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+}
+
+.nw-today-row + .nw-today-row {
+    border-top: 1px solid var(--color-widget-content-border);
+}
+
+.nw-today-label {
+    font-size: 0.8rem;
+    opacity: 0.6;
+}
+
+.nw-today-value {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-highlight);
+    font-variant-numeric: tabular-nums;
+}
+

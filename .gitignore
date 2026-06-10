@@ -2,3 +2,9 @@
 /build
 /playground
 glance.yml
+*.exe~
+*.exe
+*.db
+*.db-shm
+*.db-wal
+opencode.json
