@@ -27,6 +27,8 @@ var buildVersion = "dev"
 var buildNumber = "1"
 
 var sequentialWhitespacePattern = regexp.MustCompile(`\s+`)
+var sequentialHyphenPattern = regexp.MustCompile(`-+`)
+var invalidSlugCharsPattern = regexp.MustCompile(`[^a-z0-9\-]`)
 
 type Application struct {
 	Version     string
@@ -140,10 +142,11 @@ func (p *Page) UpdateOutdatedWidgets() bool {
 	return anyUpdated
 }
 
-// TODO: fix, currently very simple, lots of uncovered edge cases
 func titleToSlug(s string) string {
 	s = strings.ToLower(s)
 	s = sequentialWhitespacePattern.ReplaceAllString(s, "-")
+	s = invalidSlugCharsPattern.ReplaceAllString(s, "")
+	s = sequentialHyphenPattern.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 
 	return s
@@ -407,6 +410,7 @@ func (a *Application) HandleSpotifyPlay(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	TriggerImmediateSpotifyBroadcast()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -416,6 +420,7 @@ func (a *Application) HandleSpotifyPause(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	TriggerImmediateSpotifyBroadcast()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -430,6 +435,7 @@ func (a *Application) HandleSpotifySkip(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	TriggerImmediateSpotifyBroadcast()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -446,6 +452,7 @@ func (a *Application) HandleSpotifyVolume(w http.ResponseWriter, r *http.Request
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	TriggerImmediateSpotifyBroadcast()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -671,6 +678,12 @@ func (a *Application) HandleLayoutSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Validate AST config before saving
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid layout structure: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Write AST node back to disk
 	if err := saveNodeToDisk(a.ConfigPath, &rootNode); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -858,6 +871,12 @@ func (a *Application) HandleWidgetAdd(w http.ResponseWriter, r *http.Request) {
 	widgetsNode.Style = 0
 	widgetsNode.Content = append(widgetsNode.Content, newWidgetNode)
 
+	// Validate AST config before saving
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid widget structure: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if err := saveNodeToDisk(a.ConfigPath, &rootNode); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -985,6 +1004,12 @@ func (a *Application) HandleWidgetDelete(w http.ResponseWriter, r *http.Request)
 	// Delete from sequence content
 	widgetsNode.Content = append(widgetsNode.Content[:payload.WidgetIndex], widgetsNode.Content[payload.WidgetIndex+1:]...)
 
+	// Validate AST config before saving
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid widget deletion: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if err := saveNodeToDisk(a.ConfigPath, &rootNode); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1079,9 +1104,13 @@ func (a *Application) HandleWidgetGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if decoded["type"] == "spotify" {
+		a.configMu.RLock()
 		decoded["client_id"] = a.Config.Spotify.ClientID
 		decoded["redirect_url"] = a.Config.Spotify.RedirectURL
-		if a.Config.Spotify.ClientSecret != "" {
+		hasSecret := a.Config.Spotify.ClientSecret != ""
+		a.configMu.RUnlock()
+
+		if hasSecret {
 			decoded["client_secret"] = "********"
 		}
 		accessToken, _ := dbGetSetting("spotify_access_token", "")
@@ -1285,6 +1314,12 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 
 	widgetsNode.Content[payload.WidgetIndex] = newWidgetNode
 
+	// Validate AST config before saving
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid widget properties: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	if err := saveNodeToDisk(a.ConfigPath, &rootNode); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1315,13 +1350,17 @@ func (a *Application) reloadConfig() error {
 		return err
 	}
 
+	a.configMu.RLock()
+	oldPages := a.Config.Pages
+	a.configMu.RUnlock()
+
 	// Match and copy cached state from old configuration to the new one
 	for i := range config.Pages {
 		newPage := &config.Pages[i]
 		
 		// Find matching old page
 		var oldPage *Page
-		for _, op := range a.Config.Pages {
+		for _, op := range oldPages {
 			if op.Title == newPage.Title {
 				oldPage = &op
 				break
@@ -1565,6 +1604,7 @@ func derefString(s *string) string {
 
 // HandleSettingsGet fetches the active configuration parameters.
 func (a *Application) HandleSettingsGet(w http.ResponseWriter, r *http.Request) {
+	a.configMu.RLock()
 	payload := settingsPayload{
 		Branding: brandingSettingsPayload{
 			AppName:      a.Config.Branding.AppName,
@@ -1595,6 +1635,7 @@ func (a *Application) HandleSettingsGet(w http.ResponseWriter, r *http.Request) 
 			RedirectURL:  a.Config.Spotify.RedirectURL,
 		},
 	}
+	a.configMu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
@@ -1647,6 +1688,12 @@ func (a *Application) HandleSettingsSave(w http.ResponseWriter, r *http.Request)
 	}
 	if err := updateTopLevelKey(rootMap, "spotify", payload.Spotify); err != nil {
 		http.Error(w, "failed to update spotify settings: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Validate the updated configuration AST in memory before saving to disk.
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid configuration settings: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1736,6 +1783,12 @@ func (a *Application) HandlePageAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pagesNode.Content = append(pagesNode.Content, newPageNode)
+
+	// Validate AST config before saving
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid page addition: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if err := saveNodeToDisk(a.ConfigPath, &rootNode); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1859,5 +1912,26 @@ func (a *Application) HandleConfigImport(w http.ResponseWriter, r *http.Request)
 
 	slog.Info("Config imported successfully", "filename", header.Filename)
 	w.WriteHeader(http.StatusOK)
+}
+
+// validateASTConfig checks if the modified AST tree would produce a valid config structure.
+func validateASTConfig(rootNode *yaml.Node) error {
+	var buf bytes.Buffer
+	encoder := yaml.NewEncoder(&buf)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(rootNode); err != nil {
+		return fmt.Errorf("failed to encode YAML AST: %w", err)
+	}
+
+	config := NewConfig()
+	if err := yaml.Unmarshal(buf.Bytes(), config); err != nil {
+		return fmt.Errorf("failed to unmarshal YAML: %w", err)
+	}
+
+	if err := configIsValid(config); err != nil {
+		return fmt.Errorf("config validation failed: %w", err)
+	}
+
+	return nil
 }
 

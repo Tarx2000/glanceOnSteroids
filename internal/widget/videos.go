@@ -39,7 +39,9 @@ func (widget *Videos) Update(ctx context.Context) {
 		videos = videos[:widget.Limit]
 	}
 
+	widget.Lock()
 	widget.Videos = videos
+	widget.Unlock()
 }
 
 func (widget *Videos) Render() template.HTML {

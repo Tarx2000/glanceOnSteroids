@@ -54,7 +54,9 @@ func (widget *HackerNews) Update(ctx context.Context) {
 		posts = posts[:widget.Limit]
 	}
 
+	widget.Lock()
 	widget.Posts = posts
+	widget.Unlock()
 }
 
 func (widget *HackerNews) Render() template.HTML {

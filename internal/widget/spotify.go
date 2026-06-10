@@ -24,7 +24,9 @@ func (widget *Spotify) Initialize() error {
 
 // Update prepares the widget data (nothing to fetch synchronously).
 func (widget *Spotify) Update(ctx context.Context) {
+	widget.Lock()
 	widget.ContentAvailable = true
+	widget.Unlock()
 }
 
 // Render compiles the HTML of the Spotify widget.

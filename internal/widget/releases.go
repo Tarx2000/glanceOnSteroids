@@ -43,7 +43,9 @@ func (widget *Releases) Update(ctx context.Context) {
 		releases = releases[:widget.Limit]
 	}
 
+	widget.Lock()
 	widget.Releases = releases
+	widget.Unlock()
 }
 
 func (widget *Releases) Render() template.HTML {

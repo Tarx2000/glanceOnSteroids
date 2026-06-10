@@ -53,7 +53,9 @@ func (widget *RSS) Update(ctx context.Context) {
 		items = items[:widget.Limit]
 	}
 
+	widget.Lock()
 	widget.Items = items
+	widget.Unlock()
 }
 
 func (widget *RSS) Render() template.HTML {

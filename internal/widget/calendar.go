@@ -21,7 +21,10 @@ func (widget *Calendar) Initialize() error {
 }
 
 func (widget *Calendar) Update(ctx context.Context) {
-	widget.Calendar = feed.NewCalendar(time.Now())
+	cal := feed.NewCalendar(time.Now())
+	widget.Lock()
+	widget.Calendar = cal
+	widget.Unlock()
 	widget.withError(nil).scheduleNextUpdate()
 }
 

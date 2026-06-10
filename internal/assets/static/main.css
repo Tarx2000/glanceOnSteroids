@@ -1584,6 +1584,10 @@ body.modal-open {
 .toast-info    .toast-icon { color: var(--color-primary); }
 
 @keyframes toastSlideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
     to {
         opacity: 1;
         transform: translateY(0);
@@ -1749,11 +1753,19 @@ body.modal-open {
 
 .nw-chart-date,
 .nw-energy-date {
+    display: none;
     font-size: 0.6rem;
     opacity: 0.4;
     position: absolute;
     bottom: -16px;
     white-space: nowrap;
+}
+
+.nw-chart-bar-group:nth-child(7n+1) .nw-chart-date,
+.nw-chart-bar-group:last-child .nw-chart-date,
+.nw-energy-bar-group:nth-child(7n+1) .nw-energy-date,
+.nw-energy-bar-group:last-child .nw-energy-date {
+    display: block;
 }
 
 .nw-chart-bar-group {
@@ -2068,9 +2080,16 @@ body.is-dragging .mobile-navigation {
     background: var(--color-primary);
     border: none;
     border-radius: 4px;
-    color: #fff;
+    color: var(--color-background);
     cursor: pointer;
     font-weight: bold;
     font-family: inherit;
+}
+
+/* Ensure proper contrast on primary/submit buttons by using background color for text */
+#settings-modal button[type="submit"],
+#add-widget-modal button[type="submit"],
+#edit-widget-modal button[type="submit"] {
+    color: var(--color-background) !important;
 }
 

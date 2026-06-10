@@ -46,11 +46,15 @@ func (widget *CustomAPI) Update(ctx context.Context) {
 		return
 	}
 
+	widget.Lock()
 	widget.CachedHTML = buf.String()
+	widget.Unlock()
 	widget.canContinueUpdateAfterHandlingErr(nil)
 }
 
 func (widget *CustomAPI) RenderHTML() template.HTML {
+	widget.Lock()
+	defer widget.Unlock()
 	return template.HTML(widget.CachedHTML)
 }
 

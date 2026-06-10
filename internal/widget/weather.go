@@ -59,7 +59,9 @@ func (widget *Weather) Update(ctx context.Context) {
 		return
 	}
 
+	widget.Lock()
 	widget.Weather = weather
+	widget.Unlock()
 }
 
 func (widget *Weather) Render() template.HTML {

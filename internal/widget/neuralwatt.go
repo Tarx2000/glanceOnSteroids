@@ -39,10 +39,26 @@ type NeuralWatt struct {
 	EstimatedTokenCost float64                  `yaml:"-"`
 }
 
+// Configurable pricing parameters (USD per 1,000,000 tokens)
+// These variables allow customization of LLM API costs for input and output tokens.
+var (
+	// PromptTokenPriceUSD is the cost in USD per million prompt (input) tokens.
+	PromptTokenPriceUSD = 0.50
+	// CompletionTokenPriceUSD is the cost in USD per million completion (output) tokens.
+	CompletionTokenPriceUSD = 2.00
+)
+
+// Initialize configures the title and the custom cache duration (update interval)
+// for the NeuralWatt widget, falling back to 15 minutes if not specified.
 func (widget *NeuralWatt) Initialize() error {
 	widget.withTitle("NeuralWatt")
 
-	widget.withCacheDaily()
+	// Set cache duration based on update-interval settings
+	interval := 15
+	if widget.UpdateIntervalMins > 0 {
+		interval = widget.UpdateIntervalMins
+	}
+	widget.withCacheDuration(time.Duration(interval) * time.Minute)
 
 	if widget.ApiKey == "" {
 		return fmt.Errorf("neuralwatt widget requires an api-key")
@@ -51,6 +67,9 @@ func (widget *NeuralWatt) Initialize() error {
 	return nil
 }
 
+// Update retrieves the summary and energy data from the NeuralWatt service,
+// processes it using local variables, and updates the widget state under a mutex lock
+// to prevent concurrent data access races.
 func (widget *NeuralWatt) Update(ctx context.Context) {
 	apiKey := string(widget.ApiKey)
 
@@ -59,7 +78,6 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 		widget.canContinueUpdateAfterHandlingErr(err)
 		return
 	}
-	widget.Summary = &summary
 
 	endDate := time.Now().Format("2006-01-02")
 	startDate := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
@@ -69,39 +87,40 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 		widget.canContinueUpdateAfterHandlingErr(err)
 		return
 	}
-	widget.Energy = &energy
 
 	today := time.Now().Format("2006-01-02")
-	widget.TodayCost = 0
-	widget.TodayRequests = 0
-	widget.TodayTokens = 0
-	widget.TodayEnergyKwh = 0
+	todayCost := 0.0
+	todayRequests := 0
+	todayTokens := 0
+	todayEnergyKwh := 0.0
 	computedTotalCost := 0.0
+
+	// Calculate today's metrics and total cost from timeseries data
 	for _, d := range summary.TimeSeries {
 		computedTotalCost += d.CostUSD
 		if d.Date == today {
-			widget.TodayCost = d.CostUSD
-			widget.TodayRequests = d.Requests
-			widget.TodayTokens = d.TotalTokens
+			todayCost = d.CostUSD
+			todayRequests = d.Requests
+			todayTokens = d.TotalTokens
 		}
 	}
 	if computedTotalCost > 0 {
 		slog.Info("[NeuralWatt] cost comparison", "api_total", summary.Totals.TotalCostUSD, "computed_total", computedTotalCost, "api_period_start", summary.Period.Start, "api_period_end", summary.Period.End, "time_series_days", len(summary.TimeSeries))
-		widget.Summary.Totals.TotalCostUSD = computedTotalCost
+		summary.Totals.TotalCostUSD = computedTotalCost
 	}
 
-	if widget.Energy != nil {
-		for _, d := range widget.Energy.Daily {
-			if d.Date == today {
-				widget.TodayEnergyKwh = d.EnergyKwh
-				break
-			}
+	// Calculate today's energy metrics from daily energy logs
+	for _, d := range energy.Daily {
+		if d.Date == today {
+			todayEnergyKwh = d.EnergyKwh
+			break
 		}
 	}
 
-	inputCost := float64(summary.Totals.PromptTokens-summary.Totals.CachedTokens) * 0.50 / 1_000_000
-	outputCost := float64(summary.Totals.CompletionTokens) * 2.00 / 1_000_000
-	widget.EstimatedTokenCost = inputCost + outputCost
+	// Calculate estimated token cost using configurable pricing variables
+	inputCost := float64(summary.Totals.PromptTokens-summary.Totals.CachedTokens) * PromptTokenPriceUSD / 1_000_000
+	outputCost := float64(summary.Totals.CompletionTokens) * CompletionTokenPriceUSD / 1_000_000
+	estimatedTokenCost := inputCost + outputCost
 
 	maxRequests := 1
 	for _, d := range summary.TimeSeries {
@@ -110,12 +129,13 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 		}
 	}
 
-	widget.DailyChartData = make([]NeuralWattDailyBar, len(summary.TimeSeries))
+	// Format daily chart data
+	dailyChartData := make([]NeuralWattDailyBar, len(summary.TimeSeries))
 	for i, d := range summary.TimeSeries {
 		t, _ := time.Parse("2006-01-02", d.Date)
 		label := t.Format("Jan 02")
 		hpct := math.Round(float64(d.Requests) / float64(maxRequests) * 100)
-		widget.DailyChartData[i] = NeuralWattDailyBar{
+		dailyChartData[i] = NeuralWattDailyBar{
 			DateLabel: label,
 			HeightPct: hpct,
 			Requests:  d.Requests,
@@ -123,6 +143,8 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 		}
 	}
 
+	// Format energy chart data if available
+	var energyChartData []NeuralWattEnergyBar
 	if len(energy.Daily) > 0 {
 		maxKwh := 0.0
 		for _, d := range energy.Daily {
@@ -134,17 +156,34 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 			maxKwh = 1
 		}
 
-		widget.EnergyChartData = make([]NeuralWattEnergyBar, len(energy.Daily))
+		energyChartData = make([]NeuralWattEnergyBar, len(energy.Daily))
 		for i, d := range energy.Daily {
 			t, _ := time.Parse("2006-01-02", d.Date)
 			label := t.Format("Jan 02")
 			hpct := math.Round(d.EnergyKwh / maxKwh * 100)
-			widget.EnergyChartData[i] = NeuralWattEnergyBar{
+			energyChartData[i] = NeuralWattEnergyBar{
 				DateLabel: label,
 				HeightPct: hpct,
 			}
 		}
 	}
+
+	// Update the shared widget state with thread safety
+	widget.Lock()
+	widget.Summary = &summary
+	if len(energy.Daily) > 0 || energy.Totals.EnergyKwh > 0 {
+		widget.Energy = &energy
+	} else {
+		widget.Energy = nil
+	}
+	widget.DailyChartData = dailyChartData
+	widget.EnergyChartData = energyChartData
+	widget.TodayCost = todayCost
+	widget.TodayRequests = todayRequests
+	widget.TodayEnergyKwh = todayEnergyKwh
+	widget.TodayTokens = todayTokens
+	widget.EstimatedTokenCost = estimatedTokenCost
+	widget.Unlock()
 
 	widget.canContinueUpdateAfterHandlingErr(nil)
 }

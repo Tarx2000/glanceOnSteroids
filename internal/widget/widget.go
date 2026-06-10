@@ -243,52 +243,64 @@ func (w *widgetBase) withCacheDaily() *widgetBase {
 }
 
 func (w *widgetBase) withNotice(err error) *widgetBase {
+	w.Lock()
+	defer w.Unlock()
 	w.Notice = err
-
 	return w
 }
 
 func (w *widgetBase) withError(err error) *widgetBase {
+	w.Lock()
+	defer w.Unlock()
 	if err == nil && !w.ContentAvailable {
 		w.ContentAvailable = true
 	}
-
 	w.Error = err
-
 	return w
 }
 
 func (w *widgetBase) canContinueUpdateAfterHandlingErr(err error) bool {
-	// TODO: needs covering more edge cases.
-	// if there's partial content and we update early there's a chance
-	// the early update returns even less content than the initial update.
-	// need some kind of mechanism that tells us whether we should update early
-	// or not depending on the number of things that failed during the initial
-	// and subsequent update and how they failed - ie whether it was server
-	// error (like gateway timeout, do retry early) or client error (like
-	// hitting a rate limit, don't retry early). will require reworking a
-	// good amount of code in the feed package and probably having a custom
-	// error type that holds more information because screw wrapping errors.
-	// alternatively have a resource cache and only refetch the failed resources,
-	// then rebuild the widget.
+	w.Lock()
+	defer w.Unlock()
 
 	if err != nil {
-		w.scheduleEarlyUpdate()
+		// scheduleEarlyUpdate inline to prevent re-entrancy deadlock
+		w.UpdateRetriedTimes++
+		if w.UpdateRetriedTimes > 5 {
+			w.UpdateRetriedTimes = 5
+		}
+		nextEarlyUpdate := time.Now().Add(time.Duration(math.Pow(float64(w.UpdateRetriedTimes), 2)) * time.Minute)
+		nextUsualUpdate := w.getNextUpdateTime()
+		if nextEarlyUpdate.After(nextUsualUpdate) {
+			w.NextUpdate = nextUsualUpdate
+		} else {
+			w.NextUpdate = nextEarlyUpdate
+		}
 
 		if !errors.Is(err, feed.ErrPartialContent) {
-			w.withError(err)
-			w.withNotice(nil)
+			w.Error = err
+			w.Notice = nil
+			w.ContentAvailable = false
 			return false
 		}
 
-		w.withError(nil)
-		w.withNotice(err)
+		w.Error = nil
+		w.Notice = err
+		if !w.ContentAvailable {
+			w.ContentAvailable = true
+		}
 		return true
 	}
 
-	w.withNotice(nil)
-	w.withError(nil)
-	w.scheduleNextUpdate()
+	w.Notice = nil
+	w.Error = nil
+	if !w.ContentAvailable {
+		w.ContentAvailable = true
+	}
+	
+	// scheduleNextUpdate inline to prevent re-entrancy deadlock
+	w.NextUpdate = w.getNextUpdateTime()
+	w.UpdateRetriedTimes = 0
 	return true
 }
 
@@ -314,13 +326,16 @@ func (w *widgetBase) getNextUpdateTime() time.Time {
 }
 
 func (w *widgetBase) scheduleNextUpdate() *widgetBase {
+	w.Lock()
+	defer w.Unlock()
 	w.NextUpdate = w.getNextUpdateTime()
 	w.UpdateRetriedTimes = 0
-
 	return w
 }
 
 func (w *widgetBase) scheduleEarlyUpdate() *widgetBase {
+	w.Lock()
+	defer w.Unlock()
 	w.UpdateRetriedTimes++
 
 	if w.UpdateRetriedTimes > 5 {
@@ -339,7 +354,7 @@ func (w *widgetBase) scheduleEarlyUpdate() *widgetBase {
 	return w
 }
 
-func (w *widgetBase) copyBaseStateFrom(src *widgetBase) {
+func (w *widgetBase) copyBaseStateFromLocked(src *widgetBase) {
 	w.ContentAvailable = src.ContentAvailable
 	w.Error = src.Error
 	w.Notice = src.Notice
@@ -349,6 +364,14 @@ func (w *widgetBase) copyBaseStateFrom(src *widgetBase) {
 	}
 	w.NextUpdate = src.NextUpdate
 	w.UpdateRetriedTimes = src.UpdateRetriedTimes
+}
+
+func (w *widgetBase) copyBaseStateFrom(src *widgetBase) {
+	src.Lock()
+	defer src.Unlock()
+	w.Lock()
+	defer w.Unlock()
+	w.copyBaseStateFromLocked(src)
 }
 
 type stateCopier interface {
@@ -361,10 +384,25 @@ func (w *widgetBase) GetBase() *widgetBase {
 
 // CopyWidgetState copies base and cached fields from src widget to dst widget.
 func CopyWidgetState(src, dst Widget) {
+	var srcBase, dstBase *widgetBase
 	if scSrc, ok := src.(stateCopier); ok {
-		if scDst, ok := dst.(stateCopier); ok {
-			scDst.GetBase().copyBaseStateFrom(scSrc.GetBase())
-		}
+		srcBase = scSrc.GetBase()
+	}
+	if scDst, ok := dst.(stateCopier); ok {
+		dstBase = scDst.GetBase()
+	}
+
+	if srcBase != nil {
+		srcBase.Lock()
+		defer srcBase.Unlock()
+	}
+	if dstBase != nil {
+		dstBase.Lock()
+		defer dstBase.Unlock()
+	}
+
+	if srcBase != nil && dstBase != nil {
+		dstBase.copyBaseStateFromLocked(srcBase)
 	}
 
 	srcVal := reflect.ValueOf(src).Elem()

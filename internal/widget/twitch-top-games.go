@@ -38,7 +38,9 @@ func (widget *TwitchGames) Update(ctx context.Context) {
 		return
 	}
 
+	widget.Lock()
 	widget.Categories = categories
+	widget.Unlock()
 }
 
 func (widget *TwitchGames) Render() template.HTML {

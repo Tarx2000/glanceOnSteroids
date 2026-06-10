@@ -44,7 +44,9 @@ func (widget *Repository) Update(ctx context.Context) {
 		return
 	}
 
+	widget.Lock()
 	widget.RepositoryDetails = details
+	widget.Unlock()
 }
 
 func (widget *Repository) Render() template.HTML {

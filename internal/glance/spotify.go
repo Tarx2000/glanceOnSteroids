@@ -392,3 +392,47 @@ func spotifyControlAction(method, path string, body io.Reader) error {
 
 	return nil
 }
+
+// TriggerImmediateSpotifyBroadcast runs in a background goroutine, waiting for 250ms
+// before querying the current playback status and broadcasting it to all active clients.
+// This allows immediate visual feedback after play, pause, volume, or skip actions.
+func TriggerImmediateSpotifyBroadcast() {
+	go func() {
+		// Wait a short duration to let the Spotify API update its state
+		time.Sleep(250 * time.Millisecond)
+
+		auth, _ := dbGetSetting("spotify_authorized", "false")
+		if auth != "true" {
+			return
+		}
+
+		status, err := getSpotifyPlaybackStatus()
+		if err != nil {
+			errMsg := err.Error()
+			spotifyStateMu.Lock()
+			lastSpotifyError = errMsg
+			spotifyStateMu.Unlock()
+			
+			BroadcastMessage("spotify_update", map[string]interface{}{
+				"authorized": true,
+				"track":      nil,
+				"error":      errMsg,
+			})
+			return
+		}
+
+		spotifyStateMu.Lock()
+		lastTrackID = status.ID
+		lastIsPlaying = status.IsPlaying
+		lastProgressMS = status.Progress
+		lastVolume = status.Volume
+		lastSpotifyError = ""
+		spotifyStateMu.Unlock()
+
+		BroadcastMessage("spotify_update", map[string]interface{}{
+			"authorized": true,
+			"track":      status,
+			"error":      "",
+		})
+	}()
+}

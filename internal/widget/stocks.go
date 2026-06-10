@@ -39,7 +39,9 @@ func (widget *Stocks) Update(ctx context.Context) {
 		stocks.SortByAbsChange()
 	}
 
+	widget.Lock()
 	widget.Stocks = stocks
+	widget.Unlock()
 }
 
 func (widget *Stocks) Render() template.HTML {

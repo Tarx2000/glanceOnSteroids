@@ -99,7 +99,9 @@ func (widget *Reddit) Update(ctx context.Context) {
 		posts.SortByEngagement()
 	}
 
+	widget.Lock()
 	widget.Posts = posts
+	widget.Unlock()
 }
 
 func (widget *Reddit) Render() template.HTML {

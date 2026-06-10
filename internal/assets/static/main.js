@@ -547,11 +547,32 @@ function setupSpotifyControls() {
 
         try {
             if (btnPlayPause) {
+                const iconPlay = document.getElementById("spotify-icon-play");
                 const iconPause = document.getElementById("spotify-icon-pause");
                 const isPlaying = iconPause && iconPause.style.display !== "none";
+
+                // Optimistically toggle the display state of play/pause SVG icons
+                if (isPlaying) {
+                    if (iconPlay) iconPlay.style.display = "block";
+                    if (iconPause) iconPause.style.display = "none";
+                } else {
+                    if (iconPlay) iconPlay.style.display = "none";
+                    if (iconPause) iconPause.style.display = "block";
+                }
+
                 const action = isPlaying ? "pause" : "play";
                 const resp = await fetch(`/api/spotify/${action}`, { method: "POST" });
-                if (!resp.ok) console.warn("[Spotify] Control action failed:", resp.status);
+                if (!resp.ok) {
+                    console.warn("[Spotify] Control action failed:", resp.status);
+                    // Revert the optimistic toggling if the backend action fails
+                    if (isPlaying) {
+                        if (iconPlay) iconPlay.style.display = "none";
+                        if (iconPause) iconPause.style.display = "block";
+                    } else {
+                        if (iconPlay) iconPlay.style.display = "block";
+                        if (iconPause) iconPause.style.display = "none";
+                    }
+                }
             }
             if (btnPrev) {
                 const resp = await fetch("/api/spotify/skip?direction=prev", { method: "POST" });
@@ -1487,7 +1508,6 @@ function setupSettingsMenu() {
         modal.style.display = "flex";
         document.body.style.overflow = "hidden";
         setModalOpen(true);
-            setModalOpen(true);
         } catch (err) {
             showToast("Failed to load settings: " + err.message, "error");
         }
@@ -1714,6 +1734,44 @@ async function refreshPageContentsLive() {
     } catch (e) {
         console.error("[Refresh] Failed to reload page contents:", e);
         return;
+    }
+
+    // Sync mobile navigation radio pills dynamically to match current columns count in DOM
+    const columns = pageElement.querySelectorAll(".page-column");
+    const mobileIconsContainer = document.querySelector(".mobile-navigation-icons");
+    if (mobileIconsContainer && columns.length > 0) {
+        // Remove existing radio labels
+        const existingLabels = mobileIconsContainer.querySelectorAll("label:has(input[name='column'])");
+        existingLabels.forEach(lbl => lbl.remove());
+
+        const hamburgerLabel = mobileIconsContainer.querySelector("label:has(.mobile-navigation-page-links-input)");
+
+        columns.forEach((col, idx) => {
+            const label = document.createElement("label");
+            label.className = "mobile-navigation-label";
+            
+            const radio = document.createElement("input");
+            radio.type = "radio";
+            radio.className = "mobile-navigation-input";
+            radio.name = "column";
+            radio.value = idx;
+            radio.autocomplete = "off";
+            if (idx === 0) {
+                radio.checked = true;
+            }
+
+            const pill = document.createElement("div");
+            pill.className = "mobile-navigation-pill";
+
+            label.appendChild(radio);
+            label.appendChild(pill);
+
+            if (hamburgerLabel) {
+                mobileIconsContainer.insertBefore(label, hamburgerLabel);
+            } else {
+                mobileIconsContainer.appendChild(label);
+            }
+        });
     }
     
     setupLazyImages();

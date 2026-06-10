@@ -34,7 +34,9 @@ func (widget *TwitchChannels) Update(ctx context.Context) {
 	}
 
 	channels.SortByViewers()
+	widget.Lock()
 	widget.Channels = channels
+	widget.Unlock()
 }
 
 func (widget *TwitchChannels) Render() template.HTML {

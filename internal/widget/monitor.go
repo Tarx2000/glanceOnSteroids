@@ -84,6 +84,7 @@ func (widget *Monitor) Update(ctx context.Context) {
 		return
 	}
 
+	widget.Lock()
 	for i := range widget.Sites {
 		site := &widget.Sites[i]
 		status := &statuses[i]
@@ -95,6 +96,7 @@ func (widget *Monitor) Update(ctx context.Context) {
 			site.StatusStyle = statusCodeToStyle(status.Code)
 		}
 	}
+	widget.Unlock()
 }
 
 func (widget *Monitor) Render() template.HTML {
