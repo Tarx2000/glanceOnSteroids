@@ -53,26 +53,33 @@ Checkout the [releases page](https://github.com/glanceapp/glance/releases) for a
 
 ```bash
 docker run -d -p 8080:8080 \
-  -v ./glance.yml:/app/glance.yml \
+  -v ./:/app \
   -v /etc/timezone:/etc/timezone:ro \
   -v /etc/localtime:/etc/localtime:ro \
   glanceapp/glance
 ```
 
-Or if you prefer docker compose:
+Or if you prefer docker compose (a `docker-compose.yml` is included in the repo):
 
 ```yaml
 services:
   glance:
-    image: glanceapp/glance
+    build:
+      context: .
+      dockerfile: Dockerfile.single-platform
+    container_name: glance
     volumes:
-      - ./glance.yml:/app/glance.yml
+      - ./:/app
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
       - 8080:8080
     restart: unless-stopped
 ```
+
+> [!NOTE]
+>
+> The project directory is mounted as a whole (`./:/app`) rather than bind-mounting `glance.yml` as a single file. This ensures the config file is writable inside the container (required for settings saves, config imports, and the SQLite database). Single-file bind mounts are often read-only depending on the Docker storage driver.
 
 ### Building from source
 

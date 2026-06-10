@@ -1,0 +1,10 @@
+*.exe
+*.exe~
+*.db
+*.db-shm
+*.db-wal
+build/
+assets/
+playground/
+.git/
+opencode.json
