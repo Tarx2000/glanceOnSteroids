@@ -18,6 +18,9 @@
 * GitHub releases
 * Repository overview
 * Site monitor
+* **Server Stats** (CPU, RAM, disk, Docker containers, uptime)
+* **Spotify playback** (real-time via WebSockets)
+* **NeuralWatt** (LLM token usage tracking)
 
 #### Themeable
 ![multiple color schemes example](docs/images/themes-example.png)
@@ -78,6 +81,15 @@ services:
 ```
 
 > The `./config` directory is mounted to `/data` inside the container. This is where `glance.yml` and `glance.db` live. The binary lives in `/usr/local/bin/glance` and is never overwritten by volume mounts.
+
+### VPS Deployment with Tailscale
+
+For deploying on a VPS with Docker and exposing via Tailscale, see the dedicated [Deployment Guide](docs/DEPLOYMENT.md). Covers:
+
+- Multi-stage Docker build (no Go required on host)
+- Docker Compose setup with persistent config & database
+- Tailscale domain + HTTPS exposure
+- Server-Stats widget with Docker socket access
 
 ### Building from source
 

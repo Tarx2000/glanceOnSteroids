@@ -1,0 +1,60 @@
+server:
+  host: ""
+  port: 8080
+  assets-path: ""
+  timezone: Europe/Berlin
+
+branding:
+  app-name: Dashboard
+  custom-footer: |
+    <p>My Dashboard</p>
+
+theme:
+  light: false
+  contrast-multiplier: 1.3
+  text-saturation-multiplier: 0.1
+
+pages:
+  - name: Home
+    hide-desktop-navigation: true
+    columns:
+      - size: full
+        widgets:
+          - type: group
+            widgets:
+              - type: releases
+                repositories:
+                  - glanceapp/glance
+              - type: videos
+                channels:
+                  - UCsBjURrPoezykLs9EqgamOA  # Fireship
+              - type: markets
+                style: horizontal-cards
+                markets:
+                  - symbol: BTC-USD
+                    name: Bitcoin
+
+      - size: small
+        widgets:
+          - type: weather
+            hide-title: true
+            location: Berlin
+            units: metric
+
+          - type: server-stats
+            hide-title: true
+
+          # Optional: Add your own widgets here
+          # - type: spotify
+          #   hide-title: true
+
+          # - type: neuralwatt
+          #   hide-title: false
+          #   api-key: YOUR_OPENROUTER_API_KEY_HERE
+          #   update-interval: 5
+
+spotify:
+  # Optional: Configure Spotify integration
+  # client-id: YOUR_SPOTIFY_CLIENT_ID
+  # client-secret: YOUR_SPOTIFY_CLIENT_SECRET
+  # redirect-url: https://your-domain.tld/api/spotify/callback
