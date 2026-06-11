@@ -146,6 +146,24 @@ func (a *Application) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 		slog.Error("[Google] Failed to persist authorized flag", "error", err)
 	}
 
+	// Force update all calendar widgets immediately so they reflect the authorized
+	// state on the dashboard page redirect, avoiding 10-minute cache latency.
+	a.configMu.RLock()
+	for i := range a.Config.Pages {
+		page := &a.Config.Pages[i]
+		flat := page.GetFlatWidgets()
+		for _, w := range flat {
+			if cal, ok := w.(*widget.Calendar); ok {
+				cal.Lock()
+				cal.NextUpdate = time.Time{} // Clear cache duration
+				cal.Unlock()
+				// Run update synchronously so dashboard redirect gets fresh events
+				cal.Update(context.Background())
+			}
+		}
+	}
+	a.configMu.RUnlock()
+
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
