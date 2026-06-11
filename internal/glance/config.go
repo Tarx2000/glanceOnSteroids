@@ -20,12 +20,19 @@ type SpotifyConfig struct {
 	RedirectURL  string `yaml:"redirect-url"`
 }
 
+type GoogleConfig struct {
+	ClientID     string `yaml:"client-id"`
+	ClientSecret string `yaml:"client-secret"`
+	RedirectURL  string `yaml:"redirect-url"`
+}
+
 type Config struct {
 	Branding BrandingConfig `yaml:"branding"`
 	Server   Server         `yaml:"server"`
 	Theme    Theme          `yaml:"theme"`
 	Pages    []Page         `yaml:"pages"`
 	Spotify  SpotifyConfig  `yaml:"spotify"`
+	Google   GoogleConfig   `yaml:"google"`
 }
 
 func NewConfigFromYml(contents io.Reader) (*Config, error) {

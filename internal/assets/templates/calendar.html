@@ -1,27 +1,65 @@
 {{ template "widget-base.html" . }}
 
 {{ define "widget-content" }}
-<div class="flex justify-between items-center">
-    <div class="color-highlight size-h1">{{ .Calendar.CurrentMonthName }}</div>
-    <ul class="list-horizontal-text color-highlight size-h4">
-        <li>Week {{ .Calendar.CurrentWeekNumber }}</li>
-        <li>{{ .Calendar.CurrentYear }}</li>
-    </ul>
-</div>
+<div class="calendar-widget-container">
+    <style>
+        .calendar-btn {
+            background-color: var(--color-primary);
+            color: var(--color-widget-background) !important;
+            padding: 8px 16px;
+            border-radius: 20px;
+            text-decoration: none;
+            font-weight: bold;
+            display: inline-block;
+            font-size: 0.85em;
+            letter-spacing: 0.5px;
+            transition: transform 0.2s ease, filter 0.2s ease;
+        }
+        .calendar-btn:hover {
+            transform: scale(1.03);
+            filter: brightness(1.1);
+        }
+        .google-calendar-agenda {
+            display: flex;
+            flex-direction: column;
+        }
+        .calendar-event-item:last-child {
+            border-bottom: none !important;
+            padding-bottom: 0 !important;
+        }
+        .calendar-event-item:first-child {
+            padding-top: 0 !important;
+        }
+    </style>
 
-<div class="flex flex-wrap size-h6 margin-top-10 color-subdue">
-    <div class="calendar-day">Mo</div>
-    <div class="calendar-day">Tu</div>
-    <div class="calendar-day">We</div>
-    <div class="calendar-day">Th</div>
-    <div class="calendar-day">Fr</div>
-    <div class="calendar-day">Sa</div>
-    <div class="calendar-day">Su</div>
-</div>
-
-<div class="flex flex-wrap">
-    {{ range .Calendar.Days }}
-    <div class="calendar-day{{ if eq . $.Calendar.CurrentDay }} calendar-day-today{{ end }}">{{ . }}</div>
+    {{ if not .Authorized }}
+    <!-- Google Calendar login redirection UI -->
+    <div class="calendar-login-prompt" style="text-align: center; padding: 25px 10px;">
+        <p style="margin-bottom: 16px; font-size: 0.9em; opacity: 0.85;">Google Calendar integration requires authorization</p>
+        <a href="/api/google/login" class="calendar-btn">CONNECT GOOGLE CALENDAR</a>
+    </div>
+    {{ else }}
+        {{ if not .Events }}
+        <!-- Empty events state -->
+        <div style="text-align: center; padding: 25px 10px; opacity: 0.6; font-size: 0.85em;">
+            No upcoming events found.
+        </div>
+        {{ else }}
+        <!-- Scrollable chronological events agenda list -->
+        <div class="google-calendar-agenda" style="max-height: calc(52px * {{ .ViewportLimit }}); overflow-y: auto;">
+            {{ range .Events }}
+            <div class="calendar-event-item" style="display: flex; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--color-widget-content-border); gap: 10px;">
+                <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: {{ .Color }}; margin-top: 5px; flex-shrink: 0;"></span>
+                <div style="flex: 1; min-width: 0; line-height: 1.3;">
+                    <div class="color-highlight" style="font-size: 0.9em; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ .Summary }}</div>
+                    <div class="color-subdue" style="font-size: 0.75em; margin-top: 2px;">
+                        {{ .DateString }} &bull; {{ .TimeString }}
+                    </div>
+                </div>
+            </div>
+            {{ end }}
+        </div>
+        {{ end }}
     {{ end }}
 </div>
 {{ end }}

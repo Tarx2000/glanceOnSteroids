@@ -1057,6 +1057,29 @@ async function deleteWidget(colIdx, widgetIdx) {
 // ----------------------------------------------------
 
 const widgetFieldTemplates = {
+    calendar: `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client ID (Optional)</label>
+        <input type="text" name="google_client_id" placeholder="Your Google Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client Secret (Optional)</label>
+        <input type="password" name="google_client_secret" placeholder="Your Google Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Redirect URL (Optional)</label>
+        <input type="url" name="google_redirect_url" placeholder="http://localhost:8086/api/google/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Viewport Limit (Initial Entries)</label>
+        <input type="number" name="viewport-limit" value="5" min="1" max="50" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Max Days Ahead</label>
+        <input type="number" name="max-days-ahead" value="14" min="1" max="365" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Time Format</label>
+        <select name="time-format" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;">
+            <option value="24h">24 Hour Format</option>
+            <option value="12h">12 Hour Format (AM/PM)</option>
+        </select>
+        <div id="google-calendars-container" style="display: none; margin-bottom: 10px;">
+            <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Select Calendars</label>
+            <div id="google-calendars-checkboxes" style="max-height: 150px; overflow-y: auto; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px;">
+                <!-- Dynamically populated via API -->
+            </div>
+        </div>
+    `,
     weather: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Location</label>
         <input type="text" name="location" placeholder="e.g. London, United Kingdom" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
@@ -1299,6 +1322,9 @@ function setupAddWidgetModal() {
 
         // Wire dynamic add buttons and lists for dynamic fields
         initDynamicFields(fieldsContainer, type);
+        if (type === "calendar") {
+            initGoogleCalendarFields(fieldsContainer);
+        }
     });
 
     document.getElementById("btn-add-widget").addEventListener("click", showModal);
@@ -1323,11 +1349,11 @@ function setupAddWidgetModal() {
             if (key === "hide-title") return;
             if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories") {
                 // Obsolete comma-separated keys; skipped to avoid noise
-            } else if (key === "height" || key === "update-interval" || key === "limit" || key === "collapse-after" || key === "pull-requests-limit" || key === "issues-limit") {
+            } else if (key === "height" || key === "update-interval" || key === "limit" || key === "collapse-after" || key === "pull-requests-limit" || key === "issues-limit" || key === "viewport-limit" || key === "max-days-ahead") {
                 properties[key] = parseInt(value, 10);
             } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
                 // Handled separately below
-            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude") {
+            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id") {
                 // Handled separately below
             } else {
                 properties[key] = value;
@@ -1421,6 +1447,9 @@ function setupAddWidgetModal() {
                 title: formData.get("group_title") ? formData.get("group_title").trim() : "Links",
                 links: links
             }];
+        }
+        if (type === "calendar") {
+            properties["calendars"] = Array.from(formData.getAll("google_calendar_id")).filter(Boolean);
         }
 
         const response = await fetch("/api/widgets/add", {
@@ -2403,6 +2432,50 @@ function initDynamicFields(container, type, widget) {
 }
 
 /**
+ * Dynamically queries Google Calendars list and renders checkbox list in settings modal.
+ */
+async function initGoogleCalendarFields(container, widget) {
+    const checkContainer = container.querySelector("#google-calendars-container");
+    const checkboxesDiv = container.querySelector("#google-calendars-checkboxes");
+    if (!checkContainer || !checkboxesDiv) return;
+
+    checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Loading calendars...</p>`;
+    checkContainer.style.display = "block";
+
+    try {
+        const res = await fetch("/api/google/calendars");
+        if (res.status === 401) {
+            checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Please authorize Google Calendar on the dashboard first.</p>`;
+            return;
+        }
+        if (!res.ok) {
+            throw new Error(await res.text());
+        }
+        const calendars = await res.json();
+        checkboxesDiv.innerHTML = "";
+
+        if (calendars.length === 0) {
+            checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">No calendars found.</p>`;
+        } else {
+            const selectedCalendars = widget ? (widget.calendars || []) : [];
+            calendars.forEach(cal => {
+                const checked = selectedCalendars.includes(cal.id) ? "checked" : "";
+                const label = document.createElement("label");
+                label.style.cssText = "display: flex; align-items: center; gap: 8px; font-size: 0.85em; margin-bottom: 6px; cursor: pointer; user-select: none; color: inherit;";
+                label.innerHTML = `
+                    <input type="checkbox" name="google_calendar_id" value="${cal.id}" ${checked} style="cursor: pointer;" />
+                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background-color:${cal.backgroundColor || 'var(--color-primary)'}; flex-shrink:0;"></span>
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cal.summary}</span>
+                `;
+                checkboxesDiv.appendChild(label);
+            });
+        }
+    } catch (e) {
+        checkboxesDiv.innerHTML = `<p style="font-size:0.85em; color:var(--color-negative); padding:4px;">Error: ${e.message}</p>`;
+    }
+}
+
+/**
  * Appends a single RSS URL and Title input.
  */
 function addRSSFeedInput(container, url, title) {
@@ -2470,6 +2543,9 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
 
         prefillWidgetFields(fieldsContainer, type, widget);
         initDynamicFields(fieldsContainer, type, widget);
+        if (type === "calendar") {
+            await initGoogleCalendarFields(fieldsContainer, widget);
+        }
 
         const hideTitleCb = fieldsContainer.querySelector('[name="hide-title"]');
         if (hideTitleCb) {
@@ -2531,11 +2607,11 @@ function setupEditWidgetModal() {
             if (key === "hide-title") return;
             if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories" || key === "exclude") {
                 // Obsolete comma-separated keys; skipped to avoid noise
-            } else if (key === "height" || key === "limit" || key === "collapse-after" || key === "update-interval" || key === "pull-requests-limit" || key === "issues-limit") {
+            } else if (key === "height" || key === "limit" || key === "collapse-after" || key === "update-interval" || key === "pull-requests-limit" || key === "issues-limit" || key === "viewport-limit" || key === "max-days-ahead") {
                 properties[key] = parseInt(value, 10);
             } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
                 // Handled separately below
-            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude") {
+            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id") {
                 // Handled separately below
             } else {
                 properties[key] = value;
@@ -2625,6 +2701,9 @@ function setupEditWidgetModal() {
                 title: formData.get("group_title") ? formData.get("group_title").trim() : "Links",
                 links: links
             }];
+        }
+        if (type === "calendar") {
+            properties["calendars"] = Array.from(formData.getAll("google_calendar_id")).filter(Boolean);
         }
 
         const nestedIdx = nestedIdxVal !== "" ? parseInt(nestedIdxVal, 10) : undefined;

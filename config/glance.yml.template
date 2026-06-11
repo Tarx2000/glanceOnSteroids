@@ -58,3 +58,9 @@ spotify:
   # client-id: YOUR_SPOTIFY_CLIENT_ID
   # client-secret: YOUR_SPOTIFY_CLIENT_SECRET
   # redirect-url: https://your-domain.tld/api/spotify/callback
+
+google:
+  # Optional: Configure Google Calendar integration
+  # client-id: YOUR_GOOGLE_CLIENT_ID
+  # client-secret: YOUR_GOOGLE_CLIENT_SECRET
+  # redirect-url: https://your-domain.tld/api/google/callback

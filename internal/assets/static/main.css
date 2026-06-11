@@ -2432,3 +2432,33 @@ body.is-dragging .mobile-navigation {
     }
 }
 
+/* Calendar Chronological Agenda Styles */
+.calendar-widget-container {
+    width: 100%;
+}
+
+.google-calendar-agenda {
+    scrollbar-width: thin;
+}
+
+.google-calendar-agenda::-webkit-scrollbar {
+    width: 4px;
+}
+
+.google-calendar-agenda::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.google-calendar-agenda::-webkit-scrollbar-thumb {
+    background-color: var(--color-widget-content-border);
+    border-radius: 2px;
+}
+
+.calendar-event-item {
+    transition: background-color 0.2s ease;
+}
+
+.calendar-event-item:hover {
+    background-color: var(--color-widget-background-highlight);
+}
+

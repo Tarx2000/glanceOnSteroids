@@ -266,6 +266,11 @@ func (a *Application) Serve() error {
 	mux.HandleFunc("GET /api/spotify/login", a.HandleSpotifyLogin)
 	mux.HandleFunc("GET /api/spotify/callback", a.HandleSpotifyCallback)
 
+	// Google Calendar Auth routes
+	mux.HandleFunc("GET /api/google/login", a.HandleGoogleLogin)
+	mux.HandleFunc("GET /api/google/callback", a.HandleGoogleCallback)
+	mux.HandleFunc("GET /api/google/calendars", a.HandleGoogleCalendarsGet)
+
 	// Spotify playback actions
 	mux.HandleFunc("POST /api/spotify/play", a.HandleSpotifyPlay)
 	mux.HandleFunc("POST /api/spotify/pause", a.HandleSpotifyPause)
@@ -790,25 +795,25 @@ func (a *Application) HandleWidgetAdd(w http.ResponseWriter, r *http.Request) {
 		delete(payload.Properties, "access_token")
 		delete(payload.Properties, "refresh_token")
 
-		// Write tokens to SQLite database if provided
-		if accessToken != "" {
+		// Write tokens to SQLite database if provided and not placeholder
+		if accessToken != "" && accessToken != "********" {
 			if err := dbSetSetting("spotify_access_token", accessToken); err != nil {
 				slog.Error("[Spotify] Failed to persist access token", "error", err)
 			}
 		}
-		if refreshToken != "" {
+		if refreshToken != "" && refreshToken != "********" {
 			if err := dbSetSetting("spotify_refresh_token", refreshToken); err != nil {
 				slog.Error("[Spotify] Failed to persist refresh token", "error", err)
 			}
 		}
-		if accessToken != "" || refreshToken != "" {
+		if (accessToken != "" && accessToken != "********") || (refreshToken != "" && refreshToken != "********") {
 			if err := dbSetSetting("spotify_authorized", "true"); err != nil {
 				slog.Error("[Spotify] Failed to persist authorized flag", "error", err)
 			}
 		}
 
 		// Write Client ID, Client Secret, and Redirect URL globally under the 'spotify' block in glance.yml if provided
-		if clientID != "" || clientSecret != "" || redirectURL != "" {
+		if clientID != "" || (clientSecret != "" && clientSecret != "********") || redirectURL != "" {
 			spotifyNode := findMapValue(rootMap, "spotify")
 			if spotifyNode == nil || spotifyNode.Kind != yaml.MappingNode {
 				spotifyNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
@@ -818,11 +823,47 @@ func (a *Application) HandleWidgetAdd(w http.ResponseWriter, r *http.Request) {
 			if clientID != "" {
 				updateMapValue(spotifyNode, "client-id", clientID)
 			}
-			if clientSecret != "" {
+			if clientSecret != "" && clientSecret != "********" {
 				updateMapValue(spotifyNode, "client-secret", clientSecret)
 			}
 			if redirectURL != "" {
 				updateMapValue(spotifyNode, "redirect-url", redirectURL)
+			}
+		}
+	}
+
+	// Process Calendar widgets to store Google credentials globally
+	if payload.Type == "calendar" && payload.Properties != nil {
+		var clientID, clientSecret, redirectURL string
+		if cid, ok := payload.Properties["google_client_id"].(string); ok {
+			clientID = strings.TrimSpace(cid)
+		}
+		if csec, ok := payload.Properties["google_client_secret"].(string); ok {
+			clientSecret = strings.TrimSpace(csec)
+		}
+		if rurl, ok := payload.Properties["google_redirect_url"].(string); ok {
+			redirectURL = strings.TrimSpace(rurl)
+		}
+
+		delete(payload.Properties, "google_client_id")
+		delete(payload.Properties, "google_client_secret")
+		delete(payload.Properties, "google_redirect_url")
+
+		if clientID != "" || (clientSecret != "" && clientSecret != "********") || redirectURL != "" {
+			googleNode := findMapValue(rootMap, "google")
+			if googleNode == nil || googleNode.Kind != yaml.MappingNode {
+				googleNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+				keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "google"}
+				rootMap.Content = append(rootMap.Content, keyNode, googleNode)
+			}
+			if clientID != "" {
+				updateMapValue(googleNode, "client-id", clientID)
+			}
+			if clientSecret != "" && clientSecret != "********" {
+				updateMapValue(googleNode, "client-secret", clientSecret)
+			}
+			if redirectURL != "" {
+				updateMapValue(googleNode, "redirect-url", redirectURL)
 			}
 		}
 	}
@@ -899,9 +940,12 @@ func (a *Application) HandleWidgetAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Hot reload credentials if we just added/updated a Spotify widget
+	// Hot reload credentials if we just added/updated a Spotify or calendar widget
 	if payload.Type == "spotify" {
 		InitSpotify(a.Config.Spotify.ClientID, a.Config.Spotify.ClientSecret, a.Config.Spotify.RedirectURL)
+	}
+	if payload.Type == "calendar" {
+		InitGoogle(a.Config.Google.ClientID, a.Config.Google.ClientSecret, a.Config.Google.RedirectURL)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -1135,6 +1179,18 @@ func (a *Application) HandleWidgetGet(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if decoded["type"] == "calendar" {
+		a.configMu.RLock()
+		decoded["google_client_id"] = a.Config.Google.ClientID
+		decoded["google_redirect_url"] = a.Config.Google.RedirectURL
+		hasSecret := a.Config.Google.ClientSecret != ""
+		a.configMu.RUnlock()
+
+		if hasSecret {
+			decoded["google_client_secret"] = "********"
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(decoded)
 }
@@ -1260,23 +1316,23 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 		delete(payload.Properties, "access_token")
 		delete(payload.Properties, "refresh_token")
 
-		if accessToken != "" {
+		if accessToken != "" && accessToken != "********" {
 			if err := dbSetSetting("spotify_access_token", accessToken); err != nil {
 				slog.Error("[Spotify] Failed to persist access token", "error", err)
 			}
 		}
-		if refreshToken != "" {
+		if refreshToken != "" && refreshToken != "********" {
 			if err := dbSetSetting("spotify_refresh_token", refreshToken); err != nil {
 				slog.Error("[Spotify] Failed to persist refresh token", "error", err)
 			}
 		}
-		if accessToken != "" || refreshToken != "" {
+		if (accessToken != "" && accessToken != "********") || (refreshToken != "" && refreshToken != "********") {
 			if err := dbSetSetting("spotify_authorized", "true"); err != nil {
 				slog.Error("[Spotify] Failed to persist authorized flag", "error", err)
 			}
 		}
 
-		if clientID != "" || clientSecret != "" || redirectURL != "" {
+		if clientID != "" || (clientSecret != "" && clientSecret != "********") || redirectURL != "" {
 			spotifyNode := findMapValue(rootMap, "spotify")
 			if spotifyNode == nil || spotifyNode.Kind != yaml.MappingNode {
 				spotifyNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
@@ -1286,11 +1342,47 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 			if clientID != "" {
 				updateMapValue(spotifyNode, "client-id", clientID)
 			}
-			if clientSecret != "" {
+			if clientSecret != "" && clientSecret != "********" {
 				updateMapValue(spotifyNode, "client-secret", clientSecret)
 			}
 			if redirectURL != "" {
 				updateMapValue(spotifyNode, "redirect-url", redirectURL)
+			}
+		}
+	}
+
+	// Process Calendar widgets to store Google credentials globally
+	if widgetType == "calendar" && payload.Properties != nil {
+		var clientID, clientSecret, redirectURL string
+		if cid, ok := payload.Properties["google_client_id"].(string); ok {
+			clientID = strings.TrimSpace(cid)
+		}
+		if csec, ok := payload.Properties["google_client_secret"].(string); ok {
+			clientSecret = strings.TrimSpace(csec)
+		}
+		if rurl, ok := payload.Properties["google_redirect_url"].(string); ok {
+			redirectURL = strings.TrimSpace(rurl)
+		}
+
+		delete(payload.Properties, "google_client_id")
+		delete(payload.Properties, "google_client_secret")
+		delete(payload.Properties, "google_redirect_url")
+
+		if clientID != "" || (clientSecret != "" && clientSecret != "********") || redirectURL != "" {
+			googleNode := findMapValue(rootMap, "google")
+			if googleNode == nil || googleNode.Kind != yaml.MappingNode {
+				googleNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+				keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "google"}
+				rootMap.Content = append(rootMap.Content, keyNode, googleNode)
+			}
+			if clientID != "" {
+				updateMapValue(googleNode, "client-id", clientID)
+			}
+			if clientSecret != "" && clientSecret != "********" {
+				updateMapValue(googleNode, "client-secret", clientSecret)
+			}
+			if redirectURL != "" {
+				updateMapValue(googleNode, "redirect-url", redirectURL)
 			}
 		}
 	}
@@ -1309,14 +1401,14 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 	for k, v := range payload.Properties {
 		if f, ok := v.(float64); ok && f == float64(int(f)) {
 			switch k {
-			case "update-interval", "height", "limit", "collapse-after", "thumbnail-height":
+			case "update-interval", "height", "limit", "collapse-after", "thumbnail-height", "viewport-limit", "max-days-ahead":
 				v = int(f)
 			}
 		}
 		if s, ok := v.(string); ok {
 			if n, err := strconv.Atoi(s); err == nil {
 				switch k {
-				case "update-interval", "height", "limit", "collapse-after", "thumbnail-height":
+				case "update-interval", "height", "limit", "collapse-after", "thumbnail-height", "viewport-limit", "max-days-ahead":
 					v = n
 				}
 			}
@@ -1350,6 +1442,9 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 
 	if widgetType == "spotify" {
 		InitSpotify(a.Config.Spotify.ClientID, a.Config.Spotify.ClientSecret, a.Config.Spotify.RedirectURL)
+	}
+	if widgetType == "calendar" {
+		InitGoogle(a.Config.Google.ClientID, a.Config.Google.ClientSecret, a.Config.Google.RedirectURL)
 	}
 
 	w.WriteHeader(http.StatusOK)

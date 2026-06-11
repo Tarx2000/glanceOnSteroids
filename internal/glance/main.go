@@ -1,6 +1,7 @@
 package glance
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,9 +66,19 @@ func Main() int {
 			return auth == "true"
 		}
 
+		widget.GoogleAuthorizedCheck = func() bool {
+			auth, _ := dbGetSetting("google_authorized", "false")
+			return auth == "true"
+		}
+
+		widget.FetchGoogleEvents = func(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]widget.GoogleCalendarEvent, error) {
+			return fetchGoogleEventsFromAPI(ctx, calendarIDs, maxDaysAhead)
+		}
+
 		initWebSocket()
 
 		InitSpotify(config.Spotify.ClientID, config.Spotify.ClientSecret, config.Spotify.RedirectURL)
+		InitGoogle(config.Google.ClientID, config.Google.ClientSecret, config.Google.RedirectURL)
 
 		StartSpotifyPoller()
 

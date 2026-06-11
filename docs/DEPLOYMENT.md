@@ -34,7 +34,7 @@ Da auf dem VPS kein Go installiert ist, baut `Dockerfile.fullbuild` das Binary d
 
 | Stage | Basis | Zweck |
 |-------|-------|-------|
-| Builder | `golang:1.24-alpine` | Go-Modul-Download & Binary-Kompilierung |
+| Builder | `golang:1.25-alpine` | Go-Modul-Download & Binary-Kompilierung |
 | Runtime | `alpine:3.19` | Finales, minimales Image (~20 MB) |
 
 ```bash
