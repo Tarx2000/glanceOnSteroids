@@ -18,6 +18,12 @@
       "sourceType": "github",
       "skillPath": ".agents/skills/impeccable/SKILL.md",
       "computedHash": "ec3199f460c3a6fade94e753d5dfe2b46d0c770e64670a5954260d94b39311dd"
+    },
+    "oauth": {
+      "source": "vercel-labs/portless",
+      "sourceType": "github",
+      "skillPath": "skills/oauth/SKILL.md",
+      "computedHash": "9dbf0a5cc15d805924816a4df6654b105a163618ff986c79f6974211164b34a7"
     }
   }
 }

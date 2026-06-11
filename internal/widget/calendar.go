@@ -2,6 +2,7 @@ package widget
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"time"
 
@@ -28,21 +29,28 @@ var FetchGoogleEvents func(ctx context.Context, calendarIDs []string, maxDaysAhe
 
 // Event is the formatted event for rendering in the calendar HTML template.
 type Event struct {
-	Summary    string    `json:"summary"`
-	Color      string    `json:"color"`
-	TimeString string    `json:"time_string"`
-	DateString string    `json:"date_string"`
-	Start      time.Time `json:"-"`
+	Summary      string    `json:"summary"`
+	Color        string    `json:"color"`
+	TimeString   string    `json:"time_string"`
+	DateString   string    `json:"date_string"`
+	RelativeTime string    `json:"relative_time,omitempty"` // E.g. "in 2h 15m" (only for today's future events)
+	Start        time.Time `json:"-"`
+}
+
+// DayGroup represents a set of events grouped under a single calendar day header (e.g. "Today").
+type DayGroup struct {
+	DateString string  `json:"date_string"`
+	Events     []Event `json:"events"`
 }
 
 type Calendar struct {
 	widgetBase    `yaml:",inline"`
-	ViewportLimit int      `yaml:"viewport-limit"`
-	TimeFormat    string   `yaml:"time-format"`
-	Calendars     []string `yaml:"calendars"`
-	MaxDaysAhead  int      `yaml:"max-days-ahead"`
-	Events        []Event  `yaml:"-"`
-	Authorized    bool     `yaml:"-"`
+	ViewportLimit int        `yaml:"viewport-limit"`
+	TimeFormat    string     `yaml:"time-format"`
+	Calendars     []string   `yaml:"calendars"`
+	MaxDaysAhead  int        `yaml:"max-days-ahead"`
+	DayGroups     []DayGroup `yaml:"-"`
+	Authorized    bool       `yaml:"-"`
 }
 
 func (widget *Calendar) Initialize() error {
@@ -73,7 +81,7 @@ func (widget *Calendar) Update(ctx context.Context) {
 
 	if !authorized {
 		widget.Lock()
-		widget.Events = nil
+		widget.DayGroups = nil
 		widget.Unlock()
 		widget.withError(nil).scheduleNextUpdate()
 		return
@@ -87,22 +95,61 @@ func (widget *Calendar) Update(ctx context.Context) {
 		}
 
 		events := make([]Event, len(rawEvents))
+		now := time.Now()
+		nyear, nmonth, nday := now.Date()
+
 		for i, re := range rawEvents {
 			summary := re.Summary
 			if summary == "" {
 				summary = "No Title"
 			}
+
+			// Calculate relative time if it starts today and is in the future
+			relativeTime := ""
+			year, month, day := re.Start.Date()
+			if year == nyear && month == nmonth && day == nday && re.Start.After(now) && !re.AllDay {
+				diff := re.Start.Sub(now)
+				hours := int(diff.Hours())
+				minutes := int(diff.Minutes()) % 60
+				if hours > 0 {
+					if minutes > 0 {
+						relativeTime = fmt.Sprintf("in %dh %dm", hours, minutes)
+					} else {
+						relativeTime = fmt.Sprintf("in %dh", hours)
+					}
+				} else if minutes > 0 {
+					relativeTime = fmt.Sprintf("in %dm", minutes)
+				} else {
+					relativeTime = "now"
+				}
+			}
+
 			events[i] = Event{
-				Summary:    summary,
-				Color:      re.Color,
-				TimeString: formatTimeString(re.Start, re.End, re.AllDay, widget.TimeFormat),
-				DateString: formatDateString(re.Start),
-				Start:      re.Start,
+				Summary:      summary,
+				Color:        re.Color,
+				TimeString:   formatTimeString(re.Start, re.End, re.AllDay, widget.TimeFormat),
+				DateString:   formatDateString(re.Start),
+				RelativeTime: relativeTime,
+				Start:        re.Start,
+			}
+		}
+
+		// Group events chronologically by day
+		var dayGroups []DayGroup
+		for _, eq := range events {
+			if len(dayGroups) == 0 || dayGroups[len(dayGroups)-1].DateString != eq.DateString {
+				dayGroups = append(dayGroups, DayGroup{
+					DateString: eq.DateString,
+					Events:     []Event{eq},
+				})
+			} else {
+				idx := len(dayGroups) - 1
+				dayGroups[idx].Events = append(dayGroups[idx].Events, eq)
 			}
 		}
 
 		widget.Lock()
-		widget.Events = events
+		widget.DayGroups = dayGroups
 		widget.Unlock()
 	}
 

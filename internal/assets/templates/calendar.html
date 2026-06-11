@@ -3,6 +3,7 @@
 {{ define "widget-content" }}
 <div class="calendar-widget-container">
     <style>
+        /* General button styling for authorized Google OAuth flow */
         .calendar-btn {
             background-color: var(--color-primary);
             color: var(--color-widget-background) !important;
@@ -19,16 +20,105 @@
             transform: scale(1.03);
             filter: brightness(1.1);
         }
+
+        /* Container for the Google Calendar agenda list */
         .google-calendar-agenda {
             display: flex;
             flex-direction: column;
+            gap: 16px;
+            scrollbar-width: thin;
         }
-        .calendar-event-item:last-child {
-            border-bottom: none !important;
-            padding-bottom: 0 !important;
+        .google-calendar-agenda::-webkit-scrollbar {
+            width: 4px;
         }
-        .calendar-event-item:first-child {
-            padding-top: 0 !important;
+        .google-calendar-agenda::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .google-calendar-agenda::-webkit-scrollbar-thumb {
+            background-color: var(--color-widget-content-border);
+            border-radius: 2px;
+        }
+
+        /* Grouping section for events on the same calendar day */
+        .calendar-day-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* Clean typographic header for each day group */
+        .calendar-day-header {
+            font-size: 0.8em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--color-text-subdue);
+            padding-bottom: 4px;
+            border-bottom: 1px solid var(--color-widget-content-border);
+            margin-bottom: 4px;
+        }
+
+        /* Group containing the cards of a single day */
+        .calendar-day-events {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* Premium card layout for a single calendar event */
+        .calendar-event-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background-color: var(--color-widget-background);
+            border: 1px solid var(--color-widget-content-border);
+            border-left: 4px solid var(--event-color);
+            border-radius: var(--border-radius);
+            transition: transform 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+            gap: 12px;
+        }
+        .calendar-event-card:hover {
+            background-color: var(--color-widget-background-highlight);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Info container holding summary/title and time range */
+        .calendar-event-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Event title/summary typography with ellipsis truncation */
+        .calendar-event-title {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: var(--color-text-highlight);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Time range formatting under the title */
+        .calendar-event-time {
+            font-size: 0.75em;
+            color: var(--color-text-subdue);
+            margin-top: 3px;
+        }
+
+        /* Translucent colored relative time badge (e.g. "in 2h 15m") */
+        .calendar-relative-badge {
+            font-size: 0.7em;
+            font-weight: bold;
+            padding: 3px 8px;
+            border-radius: 12px;
+            flex-shrink: 0;
+            background-color: color-mix(in srgb, var(--event-color) 12%, transparent);
+            color: var(--event-color);
+            border: 1px solid color-mix(in srgb, var(--event-color) 20%, transparent);
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            letter-spacing: 0.3px;
         }
     </style>
 
@@ -39,22 +129,29 @@
         <a href="/api/google/login" class="calendar-btn">CONNECT GOOGLE CALENDAR</a>
     </div>
     {{ else }}
-        {{ if not .Events }}
+        {{ if not .DayGroups }}
         <!-- Empty events state -->
         <div style="text-align: center; padding: 25px 10px; opacity: 0.6; font-size: 0.85em;">
             No upcoming events found.
         </div>
         {{ else }}
-        <!-- Scrollable chronological events agenda list -->
-        <div class="google-calendar-agenda" style="max-height: calc(52px * {{ .ViewportLimit }}); overflow-y: auto;">
-            {{ range .Events }}
-            <div class="calendar-event-item" style="display: flex; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--color-widget-content-border); gap: 10px;">
-                <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: {{ .Color }}; margin-top: 5px; flex-shrink: 0;"></span>
-                <div style="flex: 1; min-width: 0; line-height: 1.3;">
-                    <div class="color-highlight" style="font-size: 0.9em; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ .Summary }}</div>
-                    <div class="color-subdue" style="font-size: 0.75em; margin-top: 2px;">
-                        {{ .DateString }} &bull; {{ .TimeString }}
+        <!-- Scrollable chronological day-grouped events agenda list -->
+        <div class="google-calendar-agenda" style="max-height: calc(85px * {{ .ViewportLimit }}); overflow-y: auto; padding-right: 4px;">
+            {{ range .DayGroups }}
+            <div class="calendar-day-section">
+                <div class="calendar-day-header">{{ .DateString }}</div>
+                <div class="calendar-day-events">
+                    {{ range .Events }}
+                    <div class="calendar-event-card" style="--event-color: {{ .Color }};">
+                        <div class="calendar-event-info">
+                            <div class="calendar-event-title">{{ .Summary }}</div>
+                            <div class="calendar-event-time">{{ .TimeString }}</div>
+                        </div>
+                        {{ if .RelativeTime }}
+                        <span class="calendar-relative-badge">{{ .RelativeTime }}</span>
+                        {{ end }}
                     </div>
+                    {{ end }}
                 </div>
             </div>
             {{ end }}
