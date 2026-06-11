@@ -1,0 +1,22 @@
+FROM golang:1.24-alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+ENV GOTOOLCHAIN=auto
+RUN go mod download
+COPY . .
+
+# Build with proper ldflags matching the official build script
+ARG BUILD_VERSION=dev
+ARG BUILD_NUMBER=dev
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    --trimpath \
+    --ldflags "-s -w -X github.com/glanceapp/glance/internal/glance.buildVersion=${BUILD_VERSION} -X github.com/glanceapp/glance/internal/glance.buildNumber=${BUILD_NUMBER}" \
+    -o build/glance .
+
+FROM alpine:3.19
+RUN mkdir -p /data
+WORKDIR /data
+COPY --from=builder /app/build/glance /usr/local/bin/glance
+EXPOSE 8080/tcp
+ENTRYPOINT ["glance"]
+CMD ["--config", "/data/glance.yml"]

@@ -2,6 +2,7 @@
 /build
 /playground
 glance.yml
+config/glance.yml
 *.exe~
 *.exe
 *.db

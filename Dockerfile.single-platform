@@ -21,6 +21,9 @@ RUN BUILD_NUM=$(cat BUILD_NUMBER) && \
 # Stage 2: Final minimal running image
 FROM alpine:3.19
 
+# Install docker-cli for container status reading
+RUN apk add --no-cache docker-cli
+
 # Copy the compiled binary from the builder stage
 COPY --from=builder /app/glance /usr/local/bin/glance
 
