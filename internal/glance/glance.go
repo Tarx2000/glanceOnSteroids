@@ -204,6 +204,9 @@ func (a *Application) HandlePageRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Write(responseBytes.Bytes())
 }
 
@@ -230,6 +233,9 @@ func (a *Application) HandlePageContentRequest(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	w.Write(responseBytes.Bytes())
 }
 

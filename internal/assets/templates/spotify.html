@@ -86,6 +86,202 @@
             background: var(--color-widget-content-border);
             border-radius: 2px;
         }
+        /* Collapsible layout styles */
+        .spotify-track-layout {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .spotify-top-row {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            gap: 0;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .spotify-track-layout.expanded .spotify-top-row {
+            flex-direction: row;
+            align-items: flex-start;
+            gap: 10px;
+        }
+        .spotify-cover-container {
+            position: relative;
+            cursor: pointer;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 100%;
+            flex-shrink: 0;
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+        }
+        .spotify-track-layout.expanded .spotify-cover-container {
+            width: 70px;
+        }
+        .spotify-cover-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            transition: transform 0.35s ease;
+        }
+        .spotify-cover-container:hover img {
+            transform: scale(1.04);
+        }
+        .spotify-play-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+        .spotify-cover-container:hover .spotify-play-overlay {
+            opacity: 1;
+        }
+        .spotify-info-container {
+            width: 100%;
+            text-align: center;
+            margin-top: 12px;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .spotify-track-layout.expanded .spotify-info-container {
+            width: auto;
+            flex: 1;
+            text-align: left;
+            margin-top: 0;
+            min-width: 0;
+        }
+        .spotify-info-container:hover {
+            opacity: 0.85;
+        }
+        .spotify-title-row {
+            justify-content: center;
+        }
+        .spotify-track-layout.expanded .spotify-title-row {
+            justify-content: flex-start;
+        }
+        .spotify-expand-hint {
+            margin-top: 4px;
+            opacity: 0.4;
+            transition: transform 0.35s ease, opacity 0.2s ease;
+        }
+        .spotify-track-layout.expanded .spotify-expand-hint svg {
+            transform: rotate(180deg);
+        }
+        #spotify-progress-bar {
+            margin-top: 10px;
+            height: 3px;
+            width: 100%;
+            transition: margin-top 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .spotify-track-layout.expanded #spotify-track-album {
+            display: block !important;
+        }
+        .spotify-track-layout.expanded #spotify-track-title {
+            font-size: 0.95em;
+        }
+        .spotify-track-layout.expanded #spotify-track-artist {
+            font-size: 0.82em;
+            margin-top: 2px;
+        }
+        .spotify-track-layout.expanded .spotify-expanded-controls {
+            margin-top: 8px;
+        }
+        /* ── Now-playing visualizer ──
+         * Bars animate individually; when paused the entire container
+         * smoothly scales down — this avoids the "jump" caused by trying
+         * to transition transforms on actively-keyframed elements.
+         */
+        .spotify-playing-indicator {
+            display: inline-flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 14px;
+            transform-origin: bottom;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.35s ease;
+            vertical-align: middle;
+            margin-right: 5px;
+        }
+        .spotify-playing-indicator span {
+            display: inline-block;
+            width: 3px;
+            background: var(--color-positive);
+            border-radius: 1px;
+            transform-origin: bottom;
+        }
+        .spotify-playing-indicator span:nth-child(1) {
+            height: 9px;
+            animation: spotify-vis-1 2.2s ease-in-out infinite alternate;
+        }
+        .spotify-playing-indicator span:nth-child(2) {
+            height: 14px;
+            animation: spotify-vis-2 2.6s ease-in-out infinite alternate;
+        }
+        .spotify-playing-indicator span:nth-child(3) {
+            height: 7px;
+            animation: spotify-vis-3 2.8s ease-in-out infinite alternate;
+        }
+
+        @keyframes spotify-vis-1 {
+            0%   { transform: scaleY(0.35); }
+            40%  { transform: scaleY(0.95); }
+            65%  { transform: scaleY(0.5); }
+            100% { transform: scaleY(1); }
+        }
+        @keyframes spotify-vis-2 {
+            0%   { transform: scaleY(0.9); }
+            30%  { transform: scaleY(0.25); }
+            55%  { transform: scaleY(0.8); }
+            80%  { transform: scaleY(0.4); }
+            100% { transform: scaleY(0.95); }
+        }
+        @keyframes spotify-vis-3 {
+            0%   { transform: scaleY(0.55); }
+            25%  { transform: scaleY(0.15); }
+            50%  { transform: scaleY(0.85); }
+            75%  { transform: scaleY(0.4); }
+            100% { transform: scaleY(0.7); }
+        }
+
+        /* Paused: smoothly scale the whole indicator down.
+         * Inner bars freeze in place so they don't drift in paused mode. */
+        .spotify-playing-indicator.paused {
+            transform: scaleY(0.22);
+            opacity: 0.6;
+        }
+        .spotify-playing-indicator.paused span {
+            animation-play-state: paused;
+        }
+
+        /* Hide indicator entirely when widget is expanded */
+        .spotify-track-layout.expanded .spotify-playing-indicator {
+            display: none;
+        }
+        .spotify-expanded-controls {
+            width: 100%;
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            transform: translateY(-6px);
+            transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                        opacity 0.3s ease,
+                        transform 0.3s ease;
+        }
+        .spotify-track-layout.expanded .spotify-expanded-controls {
+            max-height: 200px;
+            opacity: 1;
+            transform: translateY(0);
+            margin-top: 14px;
+        }
         /* Idle / offline state styling */
         .spotify-idle-art {
             width: 70px;
@@ -159,23 +355,63 @@
     <div id="spotify-player-content" style="{{ if .IsAuthorized }}display: block;{{ else }}display: none;{{ end }}">
         <!-- Active track info -->
         <div id="spotify-active-track" style="display: none;">
-            <div style="display: flex; gap: 15px; align-items: center;">
-                <img id="spotify-album-art" alt="Album Art" style="width: 70px; height: 70px; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background-color: #242424; object-fit: cover;" />
-                <div style="flex-grow: 1; min-width: 0;">
-                    <div id="spotify-track-title" style="font-weight: bold; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary);">Not Playing</div>
-                    <div id="spotify-track-artist" style="font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.8; margin-top: 3px;">Unknown Artist</div>
-                    <div id="spotify-track-album" style="font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.6; margin-top: 2px;">Unknown Album</div>
+            <div class="spotify-track-layout" id="spotify-track-layout">
+                <div class="spotify-top-row" id="spotify-top-row">
+                    <!-- Cover art (clickable play/pause) -->
+                    <div class="spotify-cover-container" id="spotify-cover-container" title="Play / Pause">
+                        <img id="spotify-album-art" alt="Album Art" style="background-color: #242424;" />
+                        <div id="spotify-play-overlay" class="spotify-play-overlay">
+                            <svg id="spotify-overlay-play" viewBox="0 0 24 24" width="40" height="40" fill="currentColor" style="color: #fff;"><path d="M8 5v14l11-7z"/></svg>
+                            <svg id="spotify-overlay-pause" viewBox="0 0 24 24" width="40" height="40" fill="currentColor" style="color: #fff; display: none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                        </div>
+                    </div>
+
+                    <!-- Track info (clickable to expand/collapse) -->
+                    <div class="spotify-info-container" id="spotify-info-container" title="Show / Hide controls">
+                        <div class="spotify-title-row" style="display: flex; align-items: baseline; gap: 5px;">
+                            <span id="spotify-playing-indicator" class="spotify-playing-indicator"><span></span><span></span><span></span></span>
+                            <div id="spotify-track-title" style="font-weight: bold; font-size: 1.15em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary); min-width: 0;">Not Playing</div>
+                        </div>
+                        <div id="spotify-track-artist" style="font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.75; margin-top: 4px;">Unknown Artist</div>
+                        <div id="spotify-track-album" style="font-size: 0.75em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.6; margin-top: 2px; display: none;">Unknown Album</div>
+                        <div class="spotify-expand-hint">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>
+                        </div>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Playback progress bar -->
-            <div style="margin-top: 12px;">
+
+                <!-- Thin always-visible progress bar -->
                 <div class="spotify-progress-bar-container" id="spotify-progress-bar">
                     <div id="spotify-progress-fill" class="spotify-progress-bar-fill"></div>
                 </div>
-                <div style="display: flex; justify-content: space-between; font-size: 0.75em; opacity: 0.6; margin-top: 4px;">
-                    <span id="spotify-time-progress">0:00</span>
-                    <span id="spotify-time-duration">0:00</span>
+
+                <!-- Expanded controls: time labels, skip, volume -->
+                <div class="spotify-expanded-controls" id="spotify-expanded-controls">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.75em; opacity: 0.6; margin-top: 4px;">
+                        <span id="spotify-time-progress">0:00</span>
+                        <span id="spotify-time-duration">0:00</span>
+                    </div>
+
+                    <!-- Audio controls -->
+                    <div style="display: flex; justify-content: center; align-items: center; gap: 24px; margin-top: 12px;">
+                        <button id="spotify-btn-prev" class="spotify-control-btn" title="Previous Track">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                        </button>
+                        <button id="spotify-btn-play-pause" class="spotify-control-btn" title="Play/Pause" style="color: var(--color-primary);">
+                            <svg id="spotify-icon-play" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            <svg id="spotify-icon-pause" viewBox="0 0 24 24" width="28" height="28" fill="currentColor" style="display: none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+                        </button>
+                        <button id="spotify-btn-next" class="spotify-control-btn" title="Next Track">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 18l8.5-6L6 6zm9-12v12h2V6z"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Volume adjust -->
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 0 4px;">
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="opacity: 0.6;"><path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
+                        <input type="range" id="spotify-volume-slider" class="spotify-volume-slider-input" min="0" max="100" value="50" />
+                        <span id="spotify-volume-val" style="font-size: 0.75em; opacity: 0.6; width: 28px; text-align: right;">50%</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -232,29 +468,6 @@
                     <span>0:00</span>
                 </div>
             </div>
-        </div>
-
-        <!-- Audio controls -->
-        <div style="display: flex; justify-content: center; align-items: center; gap: 24px; margin-top: 8px;">
-            <button id="spotify-btn-prev" class="spotify-control-btn" title="Previous Track">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-            </button>
-            <button id="spotify-btn-play-pause" class="spotify-control-btn" title="Play/Pause" style="color: var(--color-primary);">
-                <!-- Play Icon -->
-                <svg id="spotify-icon-play" viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                <!-- Pause Icon -->
-                <svg id="spotify-icon-pause" viewBox="0 0 24 24" width="28" height="28" fill="currentColor" style="display: none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-            </button>
-            <button id="spotify-btn-next" class="spotify-control-btn" title="Next Track">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M6 18l8.5-6L6 6zm9-12v12h2V6z"/></svg>
-            </button>
-        </div>
-
-        <!-- Volume adjust -->
-        <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 0 4px;">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="opacity: 0.6;"><path d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"/></svg>
-            <input type="range" id="spotify-volume-slider" class="spotify-volume-slider-input" min="0" max="100" value="50" />
-            <span id="spotify-volume-val" style="font-size: 0.75em; opacity: 0.6; width: 28px; text-align: right;">50%</span>
         </div>
     </div>
 </div>

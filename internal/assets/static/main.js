@@ -535,6 +535,30 @@ function updateSpotifyWidget(data) {
         timeDuration.innerText = formatTime(track.duration_ms);
     }
 
+    // Update overlay play/pause icon on cover art
+    const overlayPlay = document.getElementById("spotify-overlay-play");
+    const overlayPause = document.getElementById("spotify-overlay-pause");
+    if (track.is_playing) {
+        if (overlayPlay) overlayPlay.style.display = "none";
+        if (overlayPause) overlayPause.style.display = "block";
+    } else {
+        if (overlayPlay) overlayPlay.style.display = "block";
+        if (overlayPause) overlayPause.style.display = "none";
+    }
+
+    // Toggle visualizer paused/playing state for smooth settle animation
+    const playingIndicator = document.getElementById("spotify-playing-indicator");
+    if (playingIndicator) {
+        playingIndicator.classList.toggle("paused", !track.is_playing);
+    }
+
+    // Restore expanded/collapsed state from localStorage
+    const layout = document.getElementById("spotify-track-layout");
+    if (layout) {
+        const isExpanded = localStorage.getItem("spotify_expanded") === "true";
+        layout.classList.toggle("expanded", isExpanded);
+    }
+
     startLocalSpotifyTicker(track.progress_ms, track.duration_ms, track.is_playing);
 }
 
@@ -542,22 +566,46 @@ function updateSpotifyWidget(data) {
 function setupSpotifyControls() {
     document.addEventListener("click", async (e) => {
         const btnPlayPause = e.target.closest("#spotify-btn-play-pause");
+        const coverContainer = e.target.closest("#spotify-cover-container");
+        const infoContainer = e.target.closest("#spotify-info-container");
         const btnPrev = e.target.closest("#spotify-btn-prev");
         const btnNext = e.target.closest("#spotify-btn-next");
 
-        try {
-            if (btnPlayPause) {
+        // Toggle expanded/collapsed controls when clicking track info
+        if (infoContainer && !e.target.closest(".spotify-control-btn") && !e.target.closest("#spotify-volume-slider")) {
+            const layout = document.getElementById("spotify-track-layout");
+            if (layout) {
+                const willExpand = !layout.classList.contains("expanded");
+                layout.classList.toggle("expanded");
+                localStorage.setItem("spotify_expanded", willExpand ? "true" : "false");
+            }
+            return;
+        }
+
+        // Play / pause when clicking the album cover (or the explicit play/pause button)
+        const playPauseTrigger = btnPlayPause || coverContainer;
+        if (playPauseTrigger) {
+            try {
                 const iconPlay = document.getElementById("spotify-icon-play");
                 const iconPause = document.getElementById("spotify-icon-pause");
+                const overlayPlay = document.getElementById("spotify-overlay-play");
+                const overlayPause = document.getElementById("spotify-overlay-pause");
                 const isPlaying = iconPause && iconPause.style.display !== "none";
 
-                // Optimistically toggle the display state of play/pause SVG icons
+                // Optimistically toggle icons + visualizer animation state
+                const indicator = document.getElementById("spotify-playing-indicator");
                 if (isPlaying) {
                     if (iconPlay) iconPlay.style.display = "block";
                     if (iconPause) iconPause.style.display = "none";
+                    if (overlayPlay) overlayPlay.style.display = "block";
+                    if (overlayPause) overlayPause.style.display = "none";
+                    if (indicator) indicator.classList.add("paused");
                 } else {
                     if (iconPlay) iconPlay.style.display = "none";
                     if (iconPause) iconPause.style.display = "block";
+                    if (overlayPlay) overlayPlay.style.display = "none";
+                    if (overlayPause) overlayPause.style.display = "block";
+                    if (indicator) indicator.classList.remove("paused");
                 }
 
                 const action = isPlaying ? "pause" : "play";
@@ -568,12 +616,24 @@ function setupSpotifyControls() {
                     if (isPlaying) {
                         if (iconPlay) iconPlay.style.display = "none";
                         if (iconPause) iconPause.style.display = "block";
+                        if (overlayPlay) overlayPlay.style.display = "none";
+                        if (overlayPause) overlayPause.style.display = "block";
+                        if (indicator) indicator.classList.remove("paused");
                     } else {
                         if (iconPlay) iconPlay.style.display = "block";
                         if (iconPause) iconPause.style.display = "none";
+                        if (overlayPlay) overlayPlay.style.display = "block";
+                        if (overlayPause) overlayPause.style.display = "none";
+                        if (indicator) indicator.classList.add("paused");
                     }
                 }
+            } catch (e) {
+                console.warn("[Spotify] Play/pause action error:", e);
             }
+            return;
+        }
+
+        try {
             if (btnPrev) {
                 const resp = await fetch("/api/spotify/skip?direction=prev", { method: "POST" });
                 if (!resp.ok) console.warn("[Spotify] Skip previous failed:", resp.status);
@@ -1058,6 +1118,9 @@ async function deleteWidget(colIdx, widgetIdx) {
 
 const widgetFieldTemplates = {
     calendar: `
+        <div id="google-ip-warning" style="display: none; font-size: 0.8em; color: var(--color-negative); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-negative); padding: 8px; border-radius: 4px; background: rgba(255, 69, 58, 0.05);"></div>
+        <div id="google-redirect-hint" style="font-size: 0.8em; color: var(--color-primary); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-primary); padding: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.2);">Redirect URI: http://localhost:8086/api/google/callback</div>
+
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client ID (Optional)</label>
         <input type="text" name="google_client_id" placeholder="Your Google Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client Secret (Optional)</label>
@@ -2435,6 +2498,22 @@ function initDynamicFields(container, type, widget) {
  * Dynamically queries Google Calendars list and renders checkbox list in settings modal.
  */
 async function initGoogleCalendarFields(container, widget) {
+    const hintEl = container.querySelector("#google-redirect-hint");
+    if (hintEl) {
+        const origin = window.location.origin;
+        hintEl.textContent = `Redirect URI: ${origin}/api/google/callback`;
+        
+        const warningEl = container.querySelector("#google-ip-warning");
+        if (warningEl) {
+            if (window.location.hostname === "127.0.0.1") {
+                warningEl.innerHTML = `<strong>Warning:</strong> Google OAuth does not allow raw IP addresses like <code>127.0.0.1</code> for redirect URIs. Please access the dashboard via <a href="http://localhost:8086/" style="color:var(--color-primary);text-decoration:underline;">http://localhost:8086/</a> instead to perform the authentication.`;
+                warningEl.style.display = "block";
+            } else {
+                warningEl.style.display = "none";
+            }
+        }
+    }
+
     const checkContainer = container.querySelector("#google-calendars-container");
     const checkboxesDiv = container.querySelector("#google-calendars-checkboxes");
     if (!checkContainer || !checkboxesDiv) return;
