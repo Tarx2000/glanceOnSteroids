@@ -48,6 +48,56 @@
             </select>
             <button id="btn-edit-layout" class="nav-item" style="cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: inherit;">Edit Layout</button>
             <button id="btn-add-widget" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: inherit;">Add Widget</button>
+            
+            <!-- Collapsible Spacing Dropdown Wrapper -->
+            <div id="spacing-dropdown-wrapper" style="display: none; position: relative;">
+                <button type="button" id="btn-spacing-toggle" class="nav-item" style="cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: inherit; display: flex; align-items: center; gap: 4px;">
+                    Spacing <span style="font-size: 0.7em; opacity: 0.7;">▼</span>
+                </button>
+                <div id="spacing-dropdown-panel" class="spacing-dropdown-panel">
+                    <!-- Spacing Presets -->
+                    <div style="margin-bottom: 15px;">
+                        <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-primary); font-weight: 700; margin-bottom: 8px;">Presets</div>
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" class="preset-btn" data-preset="compact">Compact</button>
+                            <button type="button" class="preset-btn" data-preset="default">Default</button>
+                            <button type="button" class="preset-btn" data-preset="relaxed">Relaxed</button>
+                        </div>
+                    </div>
+
+                    <!-- Sliders -->
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <div class="slider-group">
+                            <div class="slider-header" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                                <label style="opacity: 0.85;">Widget Gap</label>
+                                <span id="designer_widget_gap_val" style="font-weight: 700; color: var(--color-primary);">25px</span>
+                            </div>
+                            <input type="range" id="designer_widget_gap" min="0" max="50" step="1" value="25" style="width: 100%;" />
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-header" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                                <label style="opacity: 0.85;">Vert. Padding</label>
+                                <span id="designer_vertical_padding_val" style="font-weight: 700; color: var(--color-primary);">15px</span>
+                            </div>
+                            <input type="range" id="designer_vertical_padding" min="0" max="50" step="1" value="15" style="width: 100%;" />
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-header" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                                <label style="opacity: 0.85;">Horiz. Padding</label>
+                                <span id="designer_horizontal_padding_val" style="font-weight: 700; color: var(--color-primary);">17px</span>
+                            </div>
+                            <input type="range" id="designer_horizontal_padding" min="0" max="50" step="1" value="17" style="width: 100%;" />
+                        </div>
+                        <div class="slider-group">
+                            <div class="slider-header" style="display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px;">
+                                <label style="opacity: 0.85;">Border Radius</label>
+                                <span id="designer_border_radius_val" style="font-weight: 700; color: var(--color-primary);">5px</span>
+                            </div>
+                            <input type="range" id="designer_border_radius" min="0" max="50" step="1" value="5" style="width: 100%;" />
+                        </div>
+                    </div>
+                </div>
+            </div>
             <button id="btn-undo-layout" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: var(--color-text-subdue); opacity: 0.5;" title="Undo (Ctrl+Z)">Undo</button>
             <button id="btn-save-layout" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: var(--color-primary); font-weight: bold;">Save</button>
             <button id="btn-cancel-layout" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: inherit; color: var(--color-negative);">Cancel</button>
@@ -246,28 +296,11 @@
                 <input type="text" name="theme_custom_css_file" placeholder="e.g. /assets/style.css" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
             </div>
 
-            <!-- Spacing & Density -->
-            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Spacing &amp; Density</h4>
-            <div style="display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 120px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Widget Gap</label>
-                    <input type="text" name="theme_widget_gap" placeholder="25px" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                </div>
-                <div style="flex: 1; min-width: 120px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Vertical Padding</label>
-                    <input type="text" name="theme_widget_vertical_padding" placeholder="15px" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                </div>
-            </div>
-            <div style="display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 120px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Horizontal Padding</label>
-                    <input type="text" name="theme_widget_horizontal_padding" placeholder="17px" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                </div>
-                <div style="flex: 1; min-width: 120px;">
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Border Radius</label>
-                    <input type="text" name="theme_border_radius" placeholder="5px" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                </div>
-            </div>
+            <!-- Hidden Spacing Fields to keep settings form schema intact -->
+            <input type="hidden" name="theme_widget_gap" />
+            <input type="hidden" name="theme_widget_vertical_padding" />
+            <input type="hidden" name="theme_widget_horizontal_padding" />
+            <input type="hidden" name="theme_border_radius" />
 
             <!-- Config Import -->
             <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Import Configuration</h4>
@@ -290,6 +323,7 @@
         </form>
     </div>
 </div>
+
 
 
 <div class="footer flex items-center flex-column">

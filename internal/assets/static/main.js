@@ -659,6 +659,9 @@ function setupWebSockets() {
 // ----------------------------------------------------
 
 let layoutOriginalHTML = "";
+let activeLayoutSaved = false;
+let spacingModified = false;
+let originalSpacing = null;
 
 function toggleEditMode(active) {
     const body = document.body;
@@ -699,6 +702,12 @@ function toggleEditMode(active) {
             const layoutKey = sizes.join(",");
             selectLayout.value = layoutKey || "full";
         }
+        
+        // Show spacing designer toggle
+        const spacingWrapper = document.getElementById("spacing-dropdown-wrapper");
+        if (spacingWrapper) spacingWrapper.style.display = "inline-block";
+        loadSpacingSettings();
+        
         enableWidgetsDraggability(true);
     } else {
         cancelPointerDrag();
@@ -710,6 +719,20 @@ function toggleEditMode(active) {
         if (btnUndo) btnUndo.style.display = "none";
         if (btnAddPage) btnAddPage.style.display = "none";
         if (selectLayout) selectLayout.style.display = "none";
+        
+        // Spacing designer hide and reset
+        const spacingWrapper = document.getElementById("spacing-dropdown-wrapper");
+        if (spacingWrapper) spacingWrapper.style.display = "none";
+        const spacingPanel = document.getElementById("spacing-dropdown-panel");
+        if (spacingPanel) spacingPanel.style.display = "none";
+        const toggleBtn = document.getElementById("btn-spacing-toggle");
+        if (toggleBtn) toggleBtn.classList.remove("active");
+
+        if (!activeLayoutSaved) {
+            revertSpacingLive();
+        }
+        spacingModified = false;
+
         enableWidgetsDraggability(false);
         layoutHistory = [];
         historyIndex = -1;
@@ -919,6 +942,51 @@ async function saveLayout() {
         }
     });
 
+    activeLayoutSaved = true;
+
+    if (spacingModified) {
+        try {
+            // Fetch current settings to get complete payload
+            const responseSettings = await fetch("/api/settings");
+            if (!responseSettings.ok) throw new Error("Settings fetch failed");
+            const data = await responseSettings.json();
+            
+            // Get slider values
+            const gapVal = document.getElementById("designer_widget_gap").value + "px";
+            const vertVal = document.getElementById("designer_vertical_padding").value + "px";
+            const horizVal = document.getElementById("designer_horizontal_padding").value + "px";
+            const radiusVal = document.getElementById("designer_border_radius").value + "px";
+
+            // Update theme properties
+            data.theme["widget-gap"] = gapVal;
+            data.theme["widget-content-vertical-padding"] = vertVal;
+            data.theme["widget-content-horizontal-padding"] = horizVal;
+            data.theme["border-radius"] = radiusVal;
+
+            // Save settings
+            const saveSettingsResp = await fetch("/api/settings/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
+            if (!saveSettingsResp.ok) {
+                const errText = await saveSettingsResp.text();
+                throw new Error("Failed to save spacing: " + errText);
+            }
+        } catch (e) {
+            showToast(e.message, "error");
+            activeLayoutSaved = false;
+            if (btnSave) {
+                btnSave.disabled = false;
+                btnSave.textContent = "Save";
+                btnSave.style.opacity = "";
+            }
+            if (btnCancel) btnCancel.disabled = false;
+            if (header) header.style.pointerEvents = "";
+            return;
+        }
+    }
+
     try {
         const response = await fetch("/api/layout/save", {
             method: "POST",
@@ -932,16 +1000,27 @@ async function saveLayout() {
         });
 
         if (response.ok) {
+            const wasSpacingModified = spacingModified;
             toggleEditMode(false);
             showToast("Layout saved successfully", "success");
-            await refreshPageContentsLive();
+            
+            if (wasSpacingModified) {
+                // Perform a full reload to apply spacing styles from config templates
+                window.location.reload();
+            } else {
+                await refreshPageContentsLive();
+            }
         } else {
+            activeLayoutSaved = false;
             const err = await response.text();
             showToast("Failed to save layout: " + err, "error");
         }
     } catch (err) {
+        activeLayoutSaved = false;
         showToast("Network error saving layout: " + err.message, "error");
     }
+
+    activeLayoutSaved = false;
 
     if (btnSave) {
         btnSave.disabled = false;
@@ -1765,6 +1844,217 @@ function setupSettingsMenu() {
     }
 }
 
+// ==========================================================
+// Spacing & Density Visual Designer popover logic
+// ==========================================================
+
+function applySpacingLive(cssVar, val) {
+    if (val) {
+        document.documentElement.style.setProperty(cssVar, val);
+    } else {
+        document.documentElement.style.removeProperty(cssVar);
+    }
+}
+
+function revertSpacingLive() {
+    if (!originalSpacing) return;
+    applySpacingLive("--widget-gap", originalSpacing["theme_widget_gap"]);
+    applySpacingLive("--widget-content-vertical-padding", originalSpacing["theme_widget_vertical_padding"]);
+    applySpacingLive("--widget-content-horizontal-padding", originalSpacing["theme_widget_horizontal_padding"]);
+    applySpacingLive("--border-radius", originalSpacing["theme_border_radius"]);
+}
+
+function updatePresetButtonsActiveState() {
+    const designerBar = document.getElementById("spacing-dropdown-panel");
+    const designerGap = document.getElementById("designer_widget_gap");
+    const designerVert = document.getElementById("designer_vertical_padding");
+    const designerHoriz = document.getElementById("designer_horizontal_padding");
+    const designerRadius = document.getElementById("designer_border_radius");
+
+    if (!designerBar || !designerGap || !designerVert || !designerHoriz || !designerRadius) return;
+
+    const current = {
+        gap: parseInt(designerGap.value, 10),
+        vertical: parseInt(designerVert.value, 10),
+        horizontal: parseInt(designerHoriz.value, 10),
+        radius: parseInt(designerRadius.value, 10)
+    };
+
+    const spacingPresets = {
+        compact: { gap: 12, vertical: 8, horizontal: 10, radius: 4 },
+        default: { gap: 25, vertical: 15, horizontal: 17, radius: 5 },
+        relaxed: { gap: 40, vertical: 24, horizontal: 28, radius: 8 }
+    };
+
+    let matchedPreset = null;
+    for (const [name, values] of Object.entries(spacingPresets)) {
+        if (current.gap === values.gap &&
+            current.vertical === values.vertical &&
+            current.horizontal === values.horizontal &&
+            current.radius === values.radius) {
+            matchedPreset = name;
+            break;
+        }
+    }
+
+    const presetBtns = designerBar.querySelectorAll(".preset-btn");
+    presetBtns.forEach(btn => {
+        if (btn.dataset.preset === matchedPreset) {
+            btn.classList.add("active");
+        } else {
+            btn.classList.remove("active");
+        }
+    });
+}
+
+async function loadSpacingSettings() {
+    try {
+        const response = await fetch("/api/settings");
+        if (!response.ok) throw new Error("Status " + response.status);
+        const data = await response.json();
+        
+        // Cache original values to revert if cancelled
+        originalSpacing = {
+            "theme_widget_gap": (data.theme && data.theme["widget-gap"]) || "",
+            "theme_widget_vertical_padding": (data.theme && data.theme["widget-content-vertical-padding"]) || "",
+            "theme_widget_horizontal_padding": (data.theme && data.theme["widget-content-horizontal-padding"]) || "",
+            "theme_border_radius": (data.theme && data.theme["border-radius"]) || ""
+        };
+
+        const parsePxValue = (val, fallback) => {
+            if (!val) return fallback;
+            const num = parseInt(val, 10);
+            return isNaN(num) ? fallback : num;
+        };
+
+        const gapVal = parsePxValue(originalSpacing["theme_widget_gap"], 25);
+        const vertVal = parsePxValue(originalSpacing["theme_widget_vertical_padding"], 15);
+        const horizVal = parsePxValue(originalSpacing["theme_widget_horizontal_padding"], 17);
+        const radiusVal = parsePxValue(originalSpacing["theme_border_radius"], 5);
+
+        const designerGap = document.getElementById("designer_widget_gap");
+        const designerGapVal = document.getElementById("designer_widget_gap_val");
+        const designerVert = document.getElementById("designer_vertical_padding");
+        const designerVertVal = document.getElementById("designer_vertical_padding_val");
+        const designerHoriz = document.getElementById("designer_horizontal_padding");
+        const designerHorizVal = document.getElementById("designer_horizontal_padding_val");
+        const designerRadius = document.getElementById("designer_border_radius");
+        const designerRadiusVal = document.getElementById("designer_border_radius_val");
+
+        if (designerGap && designerGapVal) {
+            designerGap.value = gapVal;
+            designerGapVal.textContent = gapVal + "px";
+        }
+        if (designerVert && designerVertVal) {
+            designerVert.value = vertVal;
+            designerVertVal.textContent = vertVal + "px";
+        }
+        if (designerHoriz && designerHorizVal) {
+            designerHoriz.value = horizVal;
+            designerHorizVal.textContent = horizVal + "px";
+        }
+        if (designerRadius && designerRadiusVal) {
+            designerRadius.value = radiusVal;
+            designerRadiusVal.textContent = radiusVal + "px";
+        }
+
+        updatePresetButtonsActiveState();
+    } catch (e) {
+        console.error("[Spacing] Failed to load spacing settings:", e);
+    }
+}
+
+function setupSpacingDesigner() {
+    const toggleBtn = document.getElementById("btn-spacing-toggle");
+    const dropdownPanel = document.getElementById("spacing-dropdown-panel");
+    
+    if (toggleBtn && dropdownPanel) {
+        toggleBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const isOpen = dropdownPanel.style.display === "block";
+            dropdownPanel.style.display = isOpen ? "none" : "block";
+            toggleBtn.classList.toggle("active", !isOpen);
+        });
+
+        document.addEventListener("click", (e) => {
+            if (!dropdownPanel.contains(e.target) && e.target !== toggleBtn) {
+                dropdownPanel.style.display = "none";
+                toggleBtn.classList.remove("active");
+            }
+        });
+    }
+
+    const designerGap = document.getElementById("designer_widget_gap");
+    const designerGapVal = document.getElementById("designer_widget_gap_val");
+    const designerVert = document.getElementById("designer_vertical_padding");
+    const designerVertVal = document.getElementById("designer_vertical_padding_val");
+    const designerHoriz = document.getElementById("designer_horizontal_padding");
+    const designerHorizVal = document.getElementById("designer_horizontal_padding_val");
+    const designerRadius = document.getElementById("designer_border_radius");
+    const designerRadiusVal = document.getElementById("designer_border_radius_val");
+
+    const syncSliderValue = (slider, spanEl, cssVar) => {
+        const val = slider.value + "px";
+        spanEl.textContent = val;
+        applySpacingLive(cssVar, val);
+        spacingModified = true;
+        updatePresetButtonsActiveState();
+    };
+
+    if (designerGap && designerGapVal) {
+        designerGap.addEventListener("input", () => syncSliderValue(designerGap, designerGapVal, "--widget-gap"));
+    }
+    if (designerVert && designerVertVal) {
+        designerVert.addEventListener("input", () => syncSliderValue(designerVert, designerVertVal, "--widget-content-vertical-padding"));
+    }
+    if (designerHoriz && designerHorizVal) {
+        designerHoriz.addEventListener("input", () => syncSliderValue(designerHoriz, designerHorizVal, "--widget-content-horizontal-padding"));
+    }
+    if (designerRadius && designerRadiusVal) {
+        designerRadius.addEventListener("input", () => syncSliderValue(designerRadius, designerRadiusVal, "--border-radius"));
+    }
+
+    const spacingPresets = {
+        compact: { gap: 12, vertical: 8, horizontal: 10, radius: 4 },
+        default: { gap: 25, vertical: 15, horizontal: 17, radius: 5 },
+        relaxed: { gap: 40, vertical: 24, horizontal: 28, radius: 8 }
+    };
+
+    if (dropdownPanel) {
+        dropdownPanel.querySelectorAll(".preset-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const presetName = btn.dataset.preset;
+                const vals = spacingPresets[presetName];
+                if (!vals) return;
+
+                if (designerGap && designerGapVal) {
+                    designerGap.value = vals.gap;
+                    designerGapVal.textContent = vals.gap + "px";
+                    applySpacingLive("--widget-gap", vals.gap + "px");
+                }
+                if (designerVert && designerVertVal) {
+                    designerVert.value = vals.vertical;
+                    designerVertVal.textContent = vals.vertical + "px";
+                    applySpacingLive("--widget-content-vertical-padding", vals.vertical + "px");
+                }
+                if (designerHoriz && designerHorizVal) {
+                    designerHoriz.value = vals.horizontal;
+                    designerHorizVal.textContent = vals.horizontal + "px";
+                    applySpacingLive("--widget-content-horizontal-padding", vals.horizontal + "px");
+                }
+                if (designerRadius && designerRadiusVal) {
+                    designerRadius.value = vals.radius;
+                    designerRadiusVal.textContent = vals.radius + "px";
+                    applySpacingLive("--border-radius", vals.radius + "px");
+                }
+
+                spacingModified = true;
+                updatePresetButtonsActiveState();
+            });
+        });
+    }
+}
+
 // Updates all digital clock widgets with local time and date client-side
 function setupClocks() {
     const updateClocks = () => {
@@ -2389,6 +2679,7 @@ async function setupPage() {
     setupAddWidgetModal();
     setupEditWidgetModal();
     setupSettingsMenu();
+    setupSpacingDesigner();
     setupClocks();
 
     document.addEventListener("keydown", (e) => {
