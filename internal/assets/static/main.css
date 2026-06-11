@@ -2164,3 +2164,98 @@ body.is-dragging .mobile-navigation {
     color: var(--color-background) !important;
 }
 
+/* --- Server Stats Widget --- */
+
+.server-stats-widget {
+  padding: 0;
+}
+
+.ss-row {
+  margin-bottom: 12px;
+}
+
+.ss-row:last-of-type {
+  margin-bottom: 0;
+}
+
+.ss-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+  opacity: 0.9;
+}
+
+.ss-value {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.ss-bar-bg {
+  position: relative;
+  height: 6px;
+  background: var(--color-widget-content-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ss-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.ss-bar-cpu-user {
+  background: linear-gradient(90deg, hsl(142, 69%, 58%), hsl(142, 71%, 45%));
+  z-index: 2;
+}
+
+.ss-bar-cpu-system {
+  background: linear-gradient(90deg, hsl(38, 92%, 50%), hsl(32, 95%, 44%));
+  z-index: 1;
+}
+
+.ss-bar-ram {
+  background: linear-gradient(90deg, hsl(217, 91%, 60%), hsl(221, 83%, 53%));
+}
+
+.ss-bar-disk {
+  background: linear-gradient(90deg, hsl(263, 70%, 66%), hsl(258, 90%, 66%));
+}
+
+.ss-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.ss-card {
+  background: var(--color-background);
+  border: 1px solid var(--color-widget-content-border);
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+
+.ss-card-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ss-card-label {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  margin-bottom: 2px;
+}
+
+.ss-card-sub {
+  font-size: 0.7rem;
+  color: var(--color-negative);
+  margin-top: 2px;
+}
+

@@ -43,6 +43,7 @@ var (
 	CustomAPITemplate             = compileTemplate("custom-api.html", "widget-base.html")
 	ClockTemplate                 = compileTemplate("clock.html", "widget-base.html")
 	NeuralWattTemplate            = compileTemplate("neuralwatt.html", "widget-base.html")
+	ServerStatsTemplate           = compileTemplate("serverstats.html", "widget-base.html")
 )
 
 var globalTemplateFunctions = template.FuncMap{

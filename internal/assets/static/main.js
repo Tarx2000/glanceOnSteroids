@@ -1092,6 +1092,9 @@ const widgetFieldTemplates = {
         <input type="password" name="api-key" placeholder="sk-..." required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Update Interval (minutes)</label>
         <input type="number" name="update-interval" value="15" min="1" max="1440" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+    `,
+    "server-stats": `
+        <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 10px;">Zeigt CPU, RAM, Disk, Docker und Uptime des Servers an.</p>
     `
 };
 

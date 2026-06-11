@@ -60,6 +60,8 @@ func New(widgetType string) (Widget, error) {
 		return &Spotify{}, nil
 	case "neuralwatt":
 		return &NeuralWatt{}, nil
+	case "server-stats":
+		return &ServerStats{}, nil
 	default:
 		return nil, fmt.Errorf("unknown widget type: %s", widgetType)
 	}

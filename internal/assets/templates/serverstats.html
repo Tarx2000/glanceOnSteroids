@@ -1,0 +1,58 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+<div class="server-stats-widget">
+
+  <!-- CPU -->
+  <div class="ss-row">
+    <div class="ss-label">
+      <span>CPU</span>
+      <span class="ss-value">{{ .CPUUser }}% user / {{ .CPUSystem }}% sys</span>
+    </div>
+    <div class="ss-bar-bg">
+      <div class="ss-bar-fill ss-bar-cpu-user" style="width: {{ .CPUUser }}%"></div>
+      <div class="ss-bar-fill ss-bar-cpu-system" style="width: {{ .CPUSystem }}%; left: {{ .CPUUser }}%"></div>
+    </div>
+  </div>
+
+  <!-- RAM -->
+  <div class="ss-row">
+    <div class="ss-label">
+      <span>RAM</span>
+      <span class="ss-value">{{ printf "%.1f" .RAMUsedGB }} / {{ printf "%.1f" .RAMTotalGB }} GB</span>
+    </div>
+    <div class="ss-bar-bg">
+      <div class="ss-bar-fill ss-bar-ram" style="width: {{ .RAMPercent }}%"></div>
+    </div>
+  </div>
+
+  <!-- Disk -->
+  <div class="ss-row">
+    <div class="ss-label">
+      <span>Disk</span>
+      <span class="ss-value">{{ printf "%.1f" .DiskUsedGB }} / {{ printf "%.1f" .DiskTotalGB }} GB</span>
+    </div>
+    <div class="ss-bar-bg">
+      <div class="ss-bar-fill ss-bar-disk" style="width: {{ .DiskPercent }}%"></div>
+    </div>
+  </div>
+
+  <!-- Docker + Uptime in einer Zeile -->
+  <div class="ss-grid-2">
+    <div class="ss-card">
+      <div class="ss-card-label">Docker Containers</div>
+      <div class="ss-card-value">
+        {{ if ge .DockerRunning 0 }}{{ .DockerRunning }}{{ else }}N/A{{ end }} / {{ if ge .DockerTotal 0 }}{{ .DockerTotal }}{{ else }}N/A{{ end }}
+      </div>
+      {{ if and (ge .DockerStopped 0) (gt .DockerStopped 0) }}
+      <div class="ss-card-sub">{{ .DockerStopped }} stopped</div>
+      {{ end }}
+    </div>
+    <div class="ss-card">
+      <div class="ss-card-label">Uptime</div>
+      <div class="ss-card-value">{{ .UptimeDays }}d {{ .UptimeHours }}h {{ .UptimeMinutes }}m</div>
+    </div>
+  </div>
+
+</div>
+{{ end }}
