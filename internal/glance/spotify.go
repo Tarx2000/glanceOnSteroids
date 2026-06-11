@@ -224,7 +224,9 @@ func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 	if resp.StatusCode == http.StatusUnauthorized {
 		// Token expired, force refresh next time
 		log.Println("[Spotify] API returned 401 Unauthorized")
-		_ = dbSetSetting("spotify_access_token", "")
+		if err := dbSetSetting("spotify_access_token", ""); err != nil {
+			log.Printf("[Spotify] Failed to clear access token: %v", err)
+		}
 		return nil, fmt.Errorf("unauthorized")
 	}
 
@@ -351,10 +353,14 @@ func getSpotifyAccessToken() (string, error) {
 		return "", err
 	}
 
-	_ = dbSetSetting("spotify_access_token", res.AccessToken)
+	if err := dbSetSetting("spotify_access_token", res.AccessToken); err != nil {
+		log.Printf("[Spotify] Failed to persist access token: %v", err)
+	}
 	if res.ExpiresIn > 0 {
 		expiryTime := time.Now().Unix() + int64(res.ExpiresIn)
-		_ = dbSetSetting("spotify_access_token_expiry", strconv.FormatInt(expiryTime, 10))
+		if err := dbSetSetting("spotify_access_token_expiry", strconv.FormatInt(expiryTime, 10)); err != nil {
+			log.Printf("[Spotify] Failed to persist token expiry: %v", err)
+		}
 	}
 	return res.AccessToken, nil
 }
@@ -381,7 +387,9 @@ func spotifyControlAction(method, path string, body io.Reader) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		_ = dbSetSetting("spotify_access_token", "")
+		if err := dbSetSetting("spotify_access_token", ""); err != nil {
+			log.Printf("[Spotify] Failed to clear access token: %v", err)
+		}
 		return fmt.Errorf("unauthorized")
 	}
 

@@ -411,7 +411,7 @@ function startLocalSpotifyTicker(progressMs, durationMs, isPlaying) {
     // Initial display update
     timeProgress.innerText = formatTime(currentProgress);
     const percent = Math.min(100, (currentProgress / durationMs) * 100);
-    progressFill.style.width = percent + "%";
+    progressFill.style.transform = "scaleX(" + (percent / 100) + ")";
 
     if (!isPlaying || currentProgress >= durationMs) return;
 
@@ -423,7 +423,7 @@ function startLocalSpotifyTicker(progressMs, durationMs, isPlaying) {
         }
         timeProgress.innerText = formatTime(currentProgress);
         const percent = Math.min(100, (currentProgress / durationMs) * 100);
-        progressFill.style.width = percent + "%";
+        progressFill.style.transform = "scaleX(" + (percent / 100) + ")";
     }, 1000);
 }
 
@@ -998,51 +998,111 @@ const widgetFieldTemplates = {
         <input type="text" name="subreddit" placeholder="e.g. selfhosted" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
     rss: `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Feed URLs (comma-separated)</label>
-        <textarea name="feeds" placeholder="https://news.ycombinator.com/rss, https://example.com/feed" required style="width: 100%; height: 80px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; resize: vertical; outline: none;"></textarea>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">RSS Feed URLs</label>
+        <div class="rss-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-rss-feed" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit;">+ Add Feed URL</button>
     `,
+    /* 
+       Stocks widget template with dynamic stock items list 
+       and sort/style settings.
+    */
     stocks: `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Stock Symbols (comma-separated)</label>
-        <input type="text" name="symbols" placeholder="e.g. AAPL, MSFT, GOOG" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-    `,
-    videos: `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">YouTube Channel IDs (comma-separated)</label>
-        <input type="text" name="channels" placeholder="e.g. UCXuqSBlHAE6Xw-yeJA0Tunw" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-    `,
-    "twitch-channels": `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Twitch Channel Names (comma-separated)</label>
-        <input type="text" name="channels" placeholder="e.g. xqc, shroud" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-    `,
-    repository: `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Repositories (comma-separated, owner/repo)</label>
-        <input type="text" name="repositories" placeholder="e.g. glanceapp/glance, golang/go" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-    `,
-    releases: `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Repositories (comma-separated, owner/repo)</label>
-        <input type="text" name="repositories" placeholder="e.g. glanceapp/glance, go-gitea/gitea" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-    `,
-    monitor: `
-        <div class="monitor-items">
-            <div class="monitor-item" style="border-bottom: 1px dashed var(--color-widget-content-border); padding-bottom: 10px; margin-bottom: 10px;">
-                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site Title</label>
-                <input type="text" name="site_title" placeholder="e.g. Google" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
-                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site URL</label>
-                <input type="url" name="site_url" placeholder="https://google.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Stock Symbols & Names</label>
+        <span style="display: block; font-size: 0.8em; opacity: 0.6; margin-bottom: 8px;">Data provided by Yahoo Finance</span>
+        <div class="stocks-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-stock-symbol" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 12px;">+ Add Symbol</button>
+        <div style="display: flex; gap: 15px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Sort By</label>
+                <select name="sort-by" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">Default (Order defined)</option>
+                    <option value="absolute-change">Absolute Change</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Style</label>
+                <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">Default List</option>
+                    <option value="dynamic-columns-experimental">Dynamic Columns (Experimental)</option>
+                    <option value="horizontal-cards">Horizontal Cards</option>
+                </select>
             </div>
         </div>
+    `,
+    /* 
+       Markets widget template with dynamic market items list 
+       and sort/style settings.
+    */
+    markets: `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Market Symbols & Names</label>
+        <span style="display: block; font-size: 0.8em; opacity: 0.6; margin-bottom: 8px;">Data provided by Yahoo Finance</span>
+        <div class="stocks-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-stock-symbol" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 12px;">+ Add Symbol</button>
+        <div style="display: flex; gap: 15px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Sort By</label>
+                <select name="sort-by" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">Default (Order defined)</option>
+                    <option value="absolute-change">Absolute Change</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Style</label>
+                <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">Default List</option>
+                    <option value="dynamic-columns-experimental">Dynamic Columns (Experimental)</option>
+                    <option value="horizontal-cards">Horizontal Cards</option>
+                </select>
+            </div>
+        </div>
+    `,
+    videos: `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">YouTube Channel IDs</label>
+        <div class="videos-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-videos-channel" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit;">+ Add Channel ID</button>
+    `,
+    "twitch-channels": `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Twitch Channel Names</label>
+        <div class="twitch-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-twitch-channel" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit;">+ Add Channel</button>
+    `,
+    repository: `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Repository (owner/repo)</label>
+        <input type="text" name="repository" placeholder="e.g. glanceapp/glance" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Token (Optional)</label>
+        <input type="password" name="token" placeholder="e.g. ghp_..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <div style="display: flex; gap: 15px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Pull Requests Limit</label>
+                <input type="number" name="pull-requests-limit" value="3" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Issues Limit</label>
+                <input type="number" name="issues-limit" value="3" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+    `,
+    releases: `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Repositories (owner/repo)</label>
+        <div class="releases-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-release-repo" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 10px;">+ Add Repository</button>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Token (Optional)</label>
+        <input type="password" name="token" placeholder="e.g. ghp_..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Release Limit</label>
+        <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Collapse After</label>
+        <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+    `,
+    monitor: `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Monitored Sites</label>
+        <div class="monitor-items" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-monitor-site" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; transition: opacity 0.2s;">+ Add Another Site</button>
     `,
     bookmarks: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Group Title</label>
-        <input type="text" name="group_title" value="My Links" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
-        <div class="bookmark-links">
-            <div class="bookmark-link-item" style="border-bottom: 1px dashed var(--color-widget-content-border); padding-bottom: 10px; margin-bottom: 10px;">
-                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link Title</label>
-                <input type="text" name="link_title" placeholder="e.g. Google" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
-                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link URL</label>
-                <input type="url" name="link_url" placeholder="https://google.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-            </div>
-        </div>
+        <input type="text" name="group_title" placeholder="e.g. My Links" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Bookmark Links</label>
+        <div class="bookmark-links" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-bookmark-link" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; transition: opacity 0.2s;">+ Add Another Link</button>
     `,
     clock: `
@@ -1086,6 +1146,15 @@ const widgetFieldTemplates = {
         <input type="password" name="access_token" placeholder="BQA..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Spotify Refresh Token (Optional)</label>
         <input type="password" name="refresh_token" placeholder="AQB..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+    `,
+    "twitch-top-games": `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Excluded Game Titles</label>
+        <div class="twitch-exclude-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-twitch-exclude" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 10px;">+ Add Excluded Game</button>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Limit</label>
+        <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Collapse After</label>
+        <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
     neuralwatt: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">NeuralWatt API Key</label>
@@ -1149,70 +1218,8 @@ function setupAddWidgetModal() {
         `;
         fieldsContainer.insertBefore(hideTitleWrapper, fieldsContainer.firstChild);
 
-        // Wire dynamic add buttons for Monitor and Bookmarks
-        if (type === "monitor") {
-            const btnAddSite = document.getElementById("btn-add-monitor-site");
-            if (btnAddSite) {
-                btnAddSite.addEventListener("click", () => {
-                    const itemsDiv = fieldsContainer.querySelector(".monitor-items");
-                    if (itemsDiv) {
-                        const newItem = document.createElement("div");
-                        newItem.className = "monitor-item";
-                        newItem.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
-                        newItem.innerHTML = `
-                            <button type="button" class="btn-remove-site" style="position: absolute; right: 0; top: 10px; background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.2s ease; z-index: 10; display: inline-flex; align-items: center; justify-content: center; line-height: 1;">× Remove</button>
-                            <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site Title</label>
-                            <input type="text" name="site_title" placeholder="e.g. Another Site" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
-                            <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site URL</label>
-                            <input type="url" name="site_url" placeholder="https://example.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                        `;
-                        itemsDiv.appendChild(newItem);
-                        
-                        const btn = newItem.querySelector(".btn-remove-site");
-                        btn.addEventListener("click", () => newItem.remove());
-                        btn.addEventListener("mouseover", () => {
-                            btn.style.backgroundColor = "var(--color-negative)";
-                            btn.style.color = "#ffffff";
-                        });
-                        btn.addEventListener("mouseout", () => {
-                            btn.style.backgroundColor = "transparent";
-                            btn.style.color = "var(--color-negative)";
-                        });
-                    }
-                });
-            }
-        } else if (type === "bookmarks") {
-            const btnAddLink = document.getElementById("btn-add-bookmark-link");
-            if (btnAddLink) {
-                btnAddLink.addEventListener("click", () => {
-                    const itemsDiv = fieldsContainer.querySelector(".bookmark-links");
-                    if (itemsDiv) {
-                        const newItem = document.createElement("div");
-                        newItem.className = "bookmark-link-item";
-                        newItem.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
-                        newItem.innerHTML = `
-                            <button type="button" class="btn-remove-link" style="position: absolute; right: 0; top: 10px; background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.2s ease; z-index: 10; display: inline-flex; align-items: center; justify-content: center; line-height: 1;">× Remove</button>
-                            <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link Title</label>
-                            <input type="text" name="link_title" placeholder="e.g. My Link" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
-                            <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link URL</label>
-                            <input type="url" name="link_url" placeholder="https://example.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                        `;
-                        itemsDiv.appendChild(newItem);
-
-                        const btn = newItem.querySelector(".btn-remove-link");
-                        btn.addEventListener("click", () => newItem.remove());
-                        btn.addEventListener("mouseover", () => {
-                            btn.style.backgroundColor = "var(--color-negative)";
-                            btn.style.color = "#ffffff";
-                        });
-                        btn.addEventListener("mouseout", () => {
-                            btn.style.backgroundColor = "transparent";
-                            btn.style.color = "var(--color-negative)";
-                        });
-                    }
-                });
-            }
-        }
+        // Wire dynamic add buttons and lists for dynamic fields
+        initDynamicFields(fieldsContainer, type);
     });
 
     document.getElementById("btn-add-widget").addEventListener("click", showModal);
@@ -1236,10 +1243,12 @@ function setupAddWidgetModal() {
         formData.forEach((value, key) => {
             if (key === "hide-title") return;
             if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories") {
-                properties[key] = value.split(",").map(s => s.trim()).filter(Boolean);
-            } else if (key === "height" || key === "update-interval") {
+                // Obsolete comma-separated keys; skipped to avoid noise
+            } else if (key === "height" || key === "update-interval" || key === "limit" || key === "collapse-after" || key === "pull-requests-limit" || key === "issues-limit") {
                 properties[key] = parseInt(value, 10);
             } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
+                // Handled separately below
+            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude") {
                 // Handled separately below
             } else {
                 properties[key] = value;
@@ -1251,8 +1260,57 @@ function setupAddWidgetModal() {
             properties["hide-title"] = hideTitleInput.checked;
         }
 
+        const type = typeSelect.value;
+
+        // Dynamic lists collector for adding a new widget
+        if (type === "rss") {
+            const list = [];
+            const urls = formData.getAll("rss_url");
+            const titles = formData.getAll("rss_title");
+            for (let i = 0; i < urls.length; i++) {
+                if (urls[i].trim()) {
+                    const obj = { url: urls[i].trim() };
+                    if (titles[i] && titles[i].trim()) {
+                        obj.title = titles[i].trim();
+                    }
+                    list.push(obj);
+                }
+            }
+            properties["feeds"] = list;
+        }
+        if (type === "stocks" || type === "markets") {
+            const list = [];
+            const symbols = formData.getAll("stocks_symbol");
+            const names = formData.getAll("stocks_name");
+            for (let i = 0; i < symbols.length; i++) {
+                if (symbols[i].trim()) {
+                    list.push({
+                        symbol: symbols[i].trim(),
+                        name: names[i] ? names[i].trim() : ""
+                    });
+                }
+            }
+            if (type === "markets") {
+                properties["markets"] = list;
+            } else {
+                properties["stocks"] = list;
+            }
+        }
+        if (type === "videos") {
+            properties["channels"] = formData.getAll("videos_channel").map(s => s.trim()).filter(Boolean);
+        }
+        if (type === "twitch-channels") {
+            properties["channels"] = formData.getAll("twitch_channel").map(s => s.trim()).filter(Boolean);
+        }
+        if (type === "releases") {
+            properties["repositories"] = formData.getAll("release_repo_name").map(s => s.trim()).filter(Boolean);
+        }
+        if (type === "twitch-top-games") {
+            properties["exclude"] = formData.getAll("twitch_exclude").map(s => s.trim()).filter(Boolean);
+        }
+
         // Special handling for monitor site items
-        if (typeSelect.value === "monitor") {
+        if (type === "monitor") {
             const sites = [];
             const siteTitles = formData.getAll("site_title");
             const siteUrls = formData.getAll("site_url");
@@ -1268,7 +1326,7 @@ function setupAddWidgetModal() {
         }
 
         // Special handling for bookmarks
-        if (typeSelect.value === "bookmarks") {
+        if (type === "bookmarks") {
             const links = [];
             const linkTitles = formData.getAll("link_title");
             const linkUrls = formData.getAll("link_url");
@@ -1836,6 +1894,250 @@ async function refreshPageContentsLive() {
 }
 
 // ----------------------------------------------------
+// Dynamic Fields Helper Functions
+// ----------------------------------------------------
+
+/**
+ * Renders a simple single text/url input field with a delete button.
+ * Used for arrays of strings (e.g. YouTube Channel IDs, RSS feed URLs).
+ */
+function addSingleStringInput(container, inputName, placeholder, value, inputType = "text") {
+    const div = document.createElement("div");
+    div.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px; align-items: center;";
+    div.innerHTML = `
+        <input type="${inputType}" name="${inputName}" placeholder="${placeholder}" required value="${value}" style="flex: 1; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <button type="button" class="btn-remove-dynamic-item" style="background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 0 10px; height: 34px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s ease; font-weight: bold;">×</button>
+    `;
+    container.appendChild(div);
+    const btn = div.querySelector(".btn-remove-dynamic-item");
+    btn.addEventListener("click", () => div.remove());
+    btn.addEventListener("mouseover", () => {
+        btn.style.backgroundColor = "var(--color-negative)";
+        btn.style.color = "#ffffff";
+    });
+    btn.addEventListener("mouseout", () => {
+        btn.style.backgroundColor = "transparent";
+        btn.style.color = "var(--color-negative)";
+    });
+}
+
+/**
+ * Renders a stock symbol input next to a custom display name input.
+ */
+function addStockInputField(container, symbol, name) {
+    const div = document.createElement("div");
+    div.className = "stocks-item";
+    div.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px; align-items: center;";
+    div.innerHTML = `
+        <input type="text" name="stocks_symbol" placeholder="Symbol (e.g. AAPL)" required value="${symbol}" style="width: 120px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <input type="text" name="stocks_name" placeholder="Name (e.g. Apple)" value="${name}" style="flex: 1; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <button type="button" class="btn-remove-dynamic-item" style="background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 0 10px; height: 34px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s ease; font-weight: bold;">×</button>
+    `;
+    container.appendChild(div);
+    const btn = div.querySelector(".btn-remove-dynamic-item");
+    btn.addEventListener("click", () => div.remove());
+    btn.addEventListener("mouseover", () => {
+        btn.style.backgroundColor = "var(--color-negative)";
+        btn.style.color = "#ffffff";
+    });
+    btn.addEventListener("mouseout", () => {
+        btn.style.backgroundColor = "transparent";
+        btn.style.color = "var(--color-negative)";
+    });
+}
+
+/**
+ * Renders a site title and URL input block for the monitor widget.
+ */
+function addMonitorSiteInput(container, title, url) {
+    const div = document.createElement("div");
+    div.className = "monitor-item";
+    div.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
+    div.innerHTML = `
+        <button type="button" class="btn-remove-site" style="position: absolute; right: 0; top: 10px; background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.2s ease; z-index: 10; display: inline-flex; align-items: center; justify-content: center; line-height: 1;">× Remove</button>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site Title</label>
+        <input type="text" name="site_title" placeholder="e.g. Google" required value="${title}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site URL</label>
+        <input type="url" name="site_url" placeholder="https://google.com" required value="${url}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+    `;
+    container.appendChild(div);
+    const btn = div.querySelector(".btn-remove-site");
+    btn.addEventListener("click", () => div.remove());
+    btn.addEventListener("mouseover", () => {
+        btn.style.backgroundColor = "var(--color-negative)";
+        btn.style.color = "#ffffff";
+    });
+    btn.addEventListener("mouseout", () => {
+        btn.style.backgroundColor = "transparent";
+        btn.style.color = "var(--color-negative)";
+    });
+}
+
+/**
+ * Renders a link title and URL input block for the bookmarks widget.
+ */
+function addBookmarkLinkInput(container, title, url) {
+    const div = document.createElement("div");
+    div.className = "bookmark-link-item";
+    div.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
+    div.innerHTML = `
+        <button type="button" class="btn-remove-link" style="position: absolute; right: 0; top: 10px; background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.2s ease; z-index: 10; display: inline-flex; align-items: center; justify-content: center; line-height: 1;">× Remove</button>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link Title</label>
+        <input type="text" name="link_title" placeholder="e.g. My Link" required value="${title}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link URL</label>
+        <input type="url" name="link_url" placeholder="https://example.com" required value="${url}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+    `;
+    container.appendChild(div);
+    const btn = div.querySelector(".btn-remove-link");
+    btn.addEventListener("click", () => div.remove());
+    btn.addEventListener("mouseover", () => {
+        btn.style.backgroundColor = "var(--color-negative)";
+        btn.style.color = "#ffffff";
+    });
+    btn.addEventListener("mouseout", () => {
+        btn.style.backgroundColor = "transparent";
+        btn.style.color = "var(--color-negative)";
+    });
+}
+
+/**
+ * Initializes list field values dynamically in the edit or add form.
+ * Wires the "Add Item" button listener.
+ */
+function initDynamicFields(container, type, widget) {
+    if (type === "rss") {
+        const itemsDiv = container.querySelector(".rss-items");
+        const btnAdd = container.querySelector("#btn-add-rss-feed");
+        if (!itemsDiv || !btnAdd) return;
+
+        let feeds = [];
+        if (widget && widget.feeds) {
+            feeds = widget.feeds.map(f => (typeof f === "object" && f !== null) ? { url: f.url || "", title: f.title || "" } : { url: f || "", title: "" });
+        }
+
+        itemsDiv.innerHTML = "";
+        feeds.forEach(val => addRSSFeedInput(itemsDiv, val.url, val.title));
+        if (feeds.length === 0) addRSSFeedInput(itemsDiv, "", "");
+
+        btnAdd.addEventListener("click", () => addRSSFeedInput(itemsDiv, "", ""));
+    }
+    else if (type === "stocks" || type === "markets") {
+        const itemsDiv = container.querySelector(".stocks-items");
+        const btnAdd = container.querySelector("#btn-add-stock-symbol");
+        if (!itemsDiv || !btnAdd) return;
+
+        const stockList = (widget && (widget.markets || widget.stocks)) || [];
+        itemsDiv.innerHTML = "";
+        stockList.forEach(stock => {
+            const sym = typeof stock === "object" ? (stock.symbol || "") : stock;
+            const name = typeof stock === "object" ? (stock.name || "") : "";
+            addStockInputField(itemsDiv, sym, name);
+        });
+        if (stockList.length === 0) addStockInputField(itemsDiv, "", "");
+
+        btnAdd.addEventListener("click", () => addStockInputField(itemsDiv, "", ""));
+    }
+    else if (type === "videos") {
+        const itemsDiv = container.querySelector(".videos-items");
+        const btnAdd = container.querySelector("#btn-add-videos-channel");
+        if (!itemsDiv || !btnAdd) return;
+
+        const channels = (widget && widget.channels) || [];
+        itemsDiv.innerHTML = "";
+        channels.forEach(val => addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", val));
+        if (channels.length === 0) addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", "");
+
+        btnAdd.addEventListener("click", () => addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", ""));
+    }
+    else if (type === "twitch-channels") {
+        const itemsDiv = container.querySelector(".twitch-items");
+        const btnAdd = container.querySelector("#btn-add-twitch-channel");
+        if (!itemsDiv || !btnAdd) return;
+
+        const channels = (widget && widget.channels) || [];
+        itemsDiv.innerHTML = "";
+        channels.forEach(val => addSingleStringInput(itemsDiv, "twitch_channel", "e.g. xqc", val));
+        if (channels.length === 0) addSingleStringInput(itemsDiv, "twitch_channel", "e.g. xqc", "");
+
+        btnAdd.addEventListener("click", () => addSingleStringInput(itemsDiv, "twitch_channel", "e.g. xqc", ""));
+    }
+    else if (type === "releases") {
+        const itemsDiv = container.querySelector(".releases-items");
+        const btnAdd = container.querySelector("#btn-add-release-repo");
+        if (!itemsDiv || !btnAdd) return;
+
+        const repos = (widget && widget.repositories) || [];
+        itemsDiv.innerHTML = "";
+        repos.forEach(val => addSingleStringInput(itemsDiv, "release_repo_name", "e.g. glanceapp/glance", val));
+        if (repos.length === 0) addSingleStringInput(itemsDiv, "release_repo_name", "e.g. glanceapp/glance", "");
+
+        btnAdd.addEventListener("click", () => addSingleStringInput(itemsDiv, "release_repo_name", "e.g. glanceapp/glance", ""));
+    }
+    else if (type === "twitch-top-games") {
+        const itemsDiv = container.querySelector(".twitch-exclude-items");
+        const btnAdd = container.querySelector("#btn-add-twitch-exclude");
+        if (!itemsDiv || !btnAdd) return;
+
+        const exclude = (widget && widget.exclude) || [];
+        itemsDiv.innerHTML = "";
+        exclude.forEach(val => addSingleStringInput(itemsDiv, "twitch_exclude", "e.g. Just Chatting", val));
+        if (exclude.length === 0) addSingleStringInput(itemsDiv, "twitch_exclude", "e.g. Just Chatting", "");
+
+        btnAdd.addEventListener("click", () => addSingleStringInput(itemsDiv, "twitch_exclude", "e.g. Just Chatting", ""));
+    }
+    else if (type === "monitor") {
+        const itemsDiv = container.querySelector(".monitor-items");
+        const btnAdd = container.querySelector("#btn-add-monitor-site");
+        if (!itemsDiv || !btnAdd) return;
+
+        const sites = (widget && widget.sites) || [];
+        itemsDiv.innerHTML = "";
+        sites.forEach(site => addMonitorSiteInput(itemsDiv, site.title || "", site.url || ""));
+        if (sites.length === 0) addMonitorSiteInput(itemsDiv, "", "");
+
+        btnAdd.addEventListener("click", () => addMonitorSiteInput(itemsDiv, "", ""));
+    }
+    else if (type === "bookmarks") {
+        const itemsDiv = container.querySelector(".bookmark-links");
+        const btnAdd = container.querySelector("#btn-add-bookmark-link");
+        if (!itemsDiv || !btnAdd) return;
+
+        const groups = (widget && widget.groups) || [];
+        const links = (groups.length > 0 && groups[0].links) || [];
+        itemsDiv.innerHTML = "";
+        links.forEach(link => addBookmarkLinkInput(itemsDiv, link.title || "", link.url || ""));
+        if (links.length === 0) addBookmarkLinkInput(itemsDiv, "", "");
+
+        btnAdd.addEventListener("click", () => addBookmarkLinkInput(itemsDiv, "", ""));
+    }
+}
+
+/**
+ * Appends a single RSS URL and Title input.
+ */
+function addRSSFeedInput(container, url, title) {
+    const div = document.createElement("div");
+    div.className = "rss-item";
+    div.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px; align-items: center;";
+    div.innerHTML = `
+        <input type="url" name="rss_url" placeholder="Feed URL (e.g. https://selfh.st/rss/)" required value="${url}" style="flex: 1; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <input type="text" name="rss_title" placeholder="Title Override" value="${title}" style="width: 130px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <button type="button" class="btn-remove-dynamic-item" style="background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 0 10px; height: 34px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s ease; font-weight: bold;">×</button>
+    `;
+    container.appendChild(div);
+    const btn = div.querySelector(".btn-remove-dynamic-item");
+    btn.addEventListener("click", () => div.remove());
+    btn.addEventListener("mouseover", () => {
+        btn.style.backgroundColor = "var(--color-negative)";
+        btn.style.color = "#ffffff";
+    });
+    btn.addEventListener("mouseout", () => {
+        btn.style.backgroundColor = "transparent";
+        btn.style.color = "var(--color-negative)";
+    });
+}
+
+// ----------------------------------------------------
 // Edit Widget Modal & Config Prefills
 // ----------------------------------------------------
 
@@ -1877,6 +2179,7 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
         fieldsContainer.insertBefore(hideTitleWrapper, fieldsContainer.firstChild);
 
         prefillWidgetFields(fieldsContainer, type, widget);
+        initDynamicFields(fieldsContainer, type, widget);
 
         const hideTitleCb = fieldsContainer.querySelector('[name="hide-title"]');
         if (hideTitleCb) {
@@ -1893,141 +2196,17 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
 
 function prefillWidgetFields(container, type, widget) {
     for (const key in widget) {
-        if (key === "type") continue;
+        if (key === "type" || key === "sites" || key === "groups" || key === "feeds" || key === "symbols" || key === "markets" || key === "stocks" || key === "channels" || key === "repositories" || key === "exclude") continue;
         const val = widget[key];
 
         const inputs = container.querySelectorAll(`[name="${key}"]`);
         inputs.forEach(input => {
-            if (Array.isArray(val)) {
-                if (val.length > 0 && typeof val[0] === "object" && val[0] !== null) {
-                    if (key === "feeds") {
-                        input.value = val.map(o => o.url || "").filter(Boolean).join(", ");
-                    }
-                    // Other object arrays (e.g. sites, groups) are handled separately
-                } else {
-                    input.value = val.join(", ");
-                }
-            } else if (typeof val === "object" && val !== null) {
-                // Nested arrays/objects handled separately below
+            if (typeof val === "object" && val !== null) {
+                // Skiped or custom handled
             } else {
                 input.value = val;
             }
         });
-    }
-
-    if (type === "monitor") {
-        const sites = widget.sites || [];
-        const itemsDiv = container.querySelector(".monitor-items");
-        const btnAddSite = container.querySelector("#btn-add-monitor-site");
-        
-        if (btnAddSite) {
-            const newBtn = btnAddSite.cloneNode(true);
-            btnAddSite.parentNode.replaceChild(newBtn, btnAddSite);
-            newBtn.addEventListener("click", () => {
-                const newItem = document.createElement("div");
-                newItem.className = "monitor-item";
-                newItem.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
-                newItem.innerHTML = `
-                    <button type="button" class="btn-remove-site" style="position: absolute; right: 0; top: 10px; background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.2s ease; z-index: 10; display: inline-flex; align-items: center; justify-content: center; line-height: 1;">× Remove</button>
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site Title</label>
-                    <input type="text" name="site_title" placeholder="e.g. Another Site" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site URL</label>
-                    <input type="url" name="site_url" placeholder="https://example.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                `;
-                itemsDiv.appendChild(newItem);
-                const btn = newItem.querySelector(".btn-remove-site");
-                btn.addEventListener("click", () => newItem.remove());
-                btn.addEventListener("mouseover", () => {
-                    btn.style.backgroundColor = "var(--color-negative)";
-                    btn.style.color = "#ffffff";
-                });
-                btn.addEventListener("mouseout", () => {
-                    btn.style.backgroundColor = "transparent";
-                    btn.style.color = "var(--color-negative)";
-                });
-            });
-        }
-
-        sites.forEach((site, index) => {
-            if (index === 0) {
-                const titleInput = itemsDiv.querySelector('[name="site_title"]');
-                const urlInput = itemsDiv.querySelector('[name="site_url"]');
-                if (titleInput) titleInput.value = site.title || "";
-                if (urlInput) urlInput.value = site.url || "";
-            } else {
-                const btn = container.querySelector("#btn-add-monitor-site");
-                if (btn) {
-                    btn.click();
-                    const allItems = itemsDiv.querySelectorAll(".monitor-item");
-                    const lastItem = allItems[allItems.length - 1];
-                    const titleInput = lastItem.querySelector('[name="site_title"]');
-                    const urlInput = lastItem.querySelector('[name="site_url"]');
-                    if (titleInput) titleInput.value = site.title || "";
-                    if (urlInput) urlInput.value = site.url || "";
-                }
-            }
-        });
-    }
-
-    if (type === "bookmarks") {
-        const groups = widget.groups || [];
-        const itemsDiv = container.querySelector(".bookmark-links");
-        const btnAddLink = container.querySelector("#btn-add-bookmark-link");
-
-        if (btnAddLink) {
-            const newBtn = btnAddLink.cloneNode(true);
-            btnAddLink.parentNode.replaceChild(newBtn, btnAddLink);
-            newBtn.addEventListener("click", () => {
-                const newItem = document.createElement("div");
-                newItem.className = "bookmark-link-item";
-                newItem.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
-                newItem.innerHTML = `
-                    <button type="button" class="btn-remove-link" style="position: absolute; right: 0; top: 10px; background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.2s ease; z-index: 10; display: inline-flex; align-items: center; justify-content: center; line-height: 1;">× Remove</button>
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link Title</label>
-                    <input type="text" name="link_title" placeholder="e.g. My Link" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
-                    <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link URL</label>
-                    <input type="url" name="link_url" placeholder="https://example.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-                `;
-                itemsDiv.appendChild(newItem);
-                const btn = newItem.querySelector(".btn-remove-link");
-                btn.addEventListener("click", () => newItem.remove());
-                btn.addEventListener("mouseover", () => {
-                    btn.style.backgroundColor = "var(--color-negative)";
-                    btn.style.color = "#ffffff";
-                });
-                btn.addEventListener("mouseout", () => {
-                    btn.style.backgroundColor = "transparent";
-                    btn.style.color = "var(--color-negative)";
-                });
-            });
-        }
-
-        if (groups.length > 0) {
-            const firstGroup = groups[0];
-            const groupTitleInput = container.querySelector('[name="group_title"]');
-            if (groupTitleInput) groupTitleInput.value = firstGroup.title || "";
-
-            const links = firstGroup.links || [];
-            links.forEach((link, index) => {
-                if (index === 0) {
-                    const titleInput = itemsDiv.querySelector('[name="link_title"]');
-                    const urlInput = itemsDiv.querySelector('[name="link_url"]');
-                    if (titleInput) titleInput.value = link.title || "";
-                    if (urlInput) urlInput.value = link.url || "";
-                } else {
-                    const btn = container.querySelector("#btn-add-bookmark-link");
-                    if (btn) {
-                        btn.click();
-                        const allItems = itemsDiv.querySelectorAll(".bookmark-link-item");
-                        const lastItem = allItems[allItems.length - 1];
-                        const titleInput = lastItem.querySelector('[name="link_title"]');
-                        const urlInput = lastItem.querySelector('[name="link_url"]');
-                        if (titleInput) titleInput.value = link.title || "";
-                        if (urlInput) urlInput.value = link.url || "";
-                    }
-                }
-            });
-        }
     }
 }
 
@@ -2060,11 +2239,13 @@ function setupEditWidgetModal() {
 
         formData.forEach((value, key) => {
             if (key === "hide-title") return;
-            if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories") {
-                properties[key] = value.split(",").map(s => s.trim()).filter(Boolean);
-            } else if (key === "height" || key === "limit" || key === "collapse-after" || key === "update-interval") {
+            if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories" || key === "exclude") {
+                // Obsolete comma-separated keys; skipped to avoid noise
+            } else if (key === "height" || key === "limit" || key === "collapse-after" || key === "update-interval" || key === "pull-requests-limit" || key === "issues-limit") {
                 properties[key] = parseInt(value, 10);
             } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
+                // Handled separately below
+            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude") {
                 // Handled separately below
             } else {
                 properties[key] = value;
@@ -2074,6 +2255,53 @@ function setupEditWidgetModal() {
         const hideTitleInput = form.elements["hide-title"];
         if (hideTitleInput) {
             properties["hide-title"] = hideTitleInput.checked;
+        }
+
+        // Dynamic lists collector for editing a widget
+        if (type === "rss") {
+            const list = [];
+            const urls = formData.getAll("rss_url");
+            const titles = formData.getAll("rss_title");
+            for (let i = 0; i < urls.length; i++) {
+                if (urls[i].trim()) {
+                    const obj = { url: urls[i].trim() };
+                    if (titles[i] && titles[i].trim()) {
+                        obj.title = titles[i].trim();
+                    }
+                    list.push(obj);
+                }
+            }
+            properties["feeds"] = list;
+        }
+        if (type === "stocks" || type === "markets") {
+            const list = [];
+            const symbols = formData.getAll("stocks_symbol");
+            const names = formData.getAll("stocks_name");
+            for (let i = 0; i < symbols.length; i++) {
+                if (symbols[i].trim()) {
+                    list.push({
+                        symbol: symbols[i].trim(),
+                        name: names[i] ? names[i].trim() : ""
+                    });
+                }
+            }
+            if (type === "markets") {
+                properties["markets"] = list;
+            } else {
+                properties["stocks"] = list;
+            }
+        }
+        if (type === "videos") {
+            properties["channels"] = formData.getAll("videos_channel").map(s => s.trim()).filter(Boolean);
+        }
+        if (type === "twitch-channels") {
+            properties["channels"] = formData.getAll("twitch_channel").map(s => s.trim()).filter(Boolean);
+        }
+        if (type === "releases") {
+            properties["repositories"] = formData.getAll("release_repo_name").map(s => s.trim()).filter(Boolean);
+        }
+        if (type === "twitch-top-games") {
+            properties["exclude"] = formData.getAll("twitch_exclude").map(s => s.trim()).filter(Boolean);
         }
 
         if (type === "monitor") {

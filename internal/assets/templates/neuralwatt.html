@@ -70,7 +70,7 @@
         {{ range .DailyChartData }}
         <div class="nw-chart-bar-group">
           <div class="nw-chart-bar-container">
-            <div class="nw-chart-bar" style="height: {{ .HeightPct }}%"></div>
+            <div class="nw-chart-bar" style="transform: scaleY({{ .HeightScale }})"></div>
           </div>
           <div class="nw-chart-date">{{ .DateLabel }}</div>
           <div class="nw-chart-tooltip">
@@ -90,7 +90,7 @@
         {{ range .EnergyChartData }}
         <div class="nw-energy-bar-group">
           <div class="nw-energy-bar-container">
-            <div class="nw-energy-bar" style="height: {{ .HeightPct }}%"></div>
+            <div class="nw-energy-bar" style="transform: scaleY({{ .HeightScale }})"></div>
           </div>
           <div class="nw-energy-date">{{ .DateLabel }}</div>
         </div>

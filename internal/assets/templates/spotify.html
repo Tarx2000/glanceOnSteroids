@@ -72,8 +72,10 @@
         .spotify-progress-bar-fill {
             background-color: var(--color-positive);
             height: 100%;
-            width: 0%;
-            transition: width 0.3s ease;
+            width: 100%;
+            transform-origin: left;
+            transform: scaleX(0);
+            transition: transform 0.3s ease;
         }
         .spotify-volume-slider-input {
             flex-grow: 1;
@@ -158,7 +160,7 @@
         <!-- Active track info -->
         <div id="spotify-active-track" style="display: none;">
             <div style="display: flex; gap: 15px; align-items: center;">
-                <img id="spotify-album-art" src="" alt="Album Art" style="width: 70px; height: 70px; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background-color: #242424; object-fit: cover;" />
+                <img id="spotify-album-art" alt="Album Art" style="width: 70px; height: 70px; border-radius: 6px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); background-color: #242424; object-fit: cover;" />
                 <div style="flex-grow: 1; min-width: 0;">
                     <div id="spotify-track-title" style="font-weight: bold; font-size: 0.95em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-primary);">Not Playing</div>
                     <div id="spotify-track-artist" style="font-size: 0.85em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.8; margin-top: 3px;">Unknown Artist</div>
@@ -194,7 +196,7 @@
             <!-- Empty progress bar placeholder to keep layout height stable -->
             <div style="margin-top: 12px; opacity: 0.15;">
                 <div class="spotify-progress-bar-container">
-                    <div class="spotify-progress-bar-fill" style="width: 0%;"></div>
+                    <div class="spotify-progress-bar-fill"></div>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.75em; margin-top: 4px;">
                     <span>0:00</span>
@@ -223,7 +225,7 @@
             <!-- Empty progress bar placeholder to keep layout height stable -->
             <div style="margin-top: 12px; opacity: 0.15;">
                 <div class="spotify-progress-bar-container">
-                    <div class="spotify-progress-bar-fill" style="width: 0%;"></div>
+                    <div class="spotify-progress-bar-fill"></div>
                 </div>
                 <div style="display: flex; justify-content: space-between; font-size: 0.75em; margin-top: 4px;">
                     <span>0:00</span>

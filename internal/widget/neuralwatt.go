@@ -13,15 +13,17 @@ import (
 )
 
 type NeuralWattDailyBar struct {
-	DateLabel  string
-	HeightPct  float64
-	Requests   int
-	CostUSD    float64
+	DateLabel   string
+	HeightPct   float64
+	HeightScale float64
+	Requests    int
+	CostUSD     float64
 }
 
 type NeuralWattEnergyBar struct {
-	DateLabel string
-	HeightPct float64
+	DateLabel   string
+	HeightPct   float64
+	HeightScale float64
 }
 
 type NeuralWatt struct {
@@ -165,10 +167,11 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 		label := t.Format("Jan 02")
 		hpct := math.Round(float64(d.Requests) / float64(maxRequests) * 100)
 		dailyChartData[i] = NeuralWattDailyBar{
-			DateLabel: label,
-			HeightPct: hpct,
-			Requests:  d.Requests,
-			CostUSD:   d.CostUSD,
+			DateLabel:   label,
+			HeightPct:   hpct,
+			HeightScale: hpct / 100.0,
+			Requests:    d.Requests,
+			CostUSD:     d.CostUSD,
 		}
 	}
 
@@ -191,8 +194,9 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 			label := t.Format("Jan 02")
 			hpct := math.Round(d.EnergyKwh / maxKwh * 100)
 			energyChartData[i] = NeuralWattEnergyBar{
-				DateLabel: label,
-				HeightPct: hpct,
+				DateLabel:   label,
+				HeightPct:   hpct,
+				HeightScale: hpct / 100.0,
 			}
 		}
 	}

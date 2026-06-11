@@ -12,6 +12,7 @@ It features a layout editor with drag-and-drop, real-time Spotify playback via W
 - **Screen reader / Accessibility improvements:** Intentionally excluded. This is a personal project and accessibility enhancements (e.g., ARIA labels, skip-links, keyboard-only DnD) are not a priority.
 - **Database:** SQLite via `modernc.org/sqlite`.
 - **Config:** `glance.yml` is the single source of truth; all runtime mutations write back to it while preserving structure/comments via YAML AST.
+- **Widget Modal Completeness & UI/UX:** When creating or modifying widgets, it is critical to ensure that all configuration properties supported by the widget are fully exposed in both the "Add Widget" and "Edit Widget" modals. Keep the inputs clean, modern, and intuitive, prioritizing simple and highly responsive UI/UX.
 
 ## Known Architectural Notes
 

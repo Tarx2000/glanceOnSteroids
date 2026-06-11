@@ -21,12 +21,16 @@ type ServerStats struct {
 	CPUUser       int     `yaml:"-"`
 	CPUSystem     int     `yaml:"-"`
 	CPUIdle       int     `yaml:"-"`
+	CPUUserScale   float64 `yaml:"-"`
+	CPUSystemScale float64 `yaml:"-"`
 	RAMUsedGB     float64 `yaml:"-"`
 	RAMTotalGB    float64 `yaml:"-"`
 	RAMPercent    int     `yaml:"-"`
+	RAMScale      float64 `yaml:"-"`
 	DiskUsedGB    float64 `yaml:"-"`
 	DiskTotalGB   float64 `yaml:"-"`
 	DiskPercent   int     `yaml:"-"`
+	DiskScale     float64 `yaml:"-"`
 	DockerRunning int     `yaml:"-"`
 	DockerStopped int     `yaml:"-"`
 	DockerTotal   int     `yaml:"-"`
@@ -131,6 +135,8 @@ func (widget *ServerStats) readCPU() {
 	s2 := parseCPUSample(string(data2))
 
 	widget.CPUUser, widget.CPUSystem, widget.CPUIdle = calcCPUPercent(s1, s2)
+	widget.CPUUserScale = float64(widget.CPUUser) / 100.0
+	widget.CPUSystemScale = float64(widget.CPUSystem) / 100.0
 }
 
 func (widget *ServerStats) readRAM() {
@@ -172,6 +178,7 @@ func (widget *ServerStats) readRAM() {
 	}
 	widget.RAMUsedGB = float64(used) / 1024 / 1024
 	widget.RAMPercent = (used * 100) / memTotal
+	widget.RAMScale = float64(widget.RAMPercent) / 100.0
 }
 
 func (widget *ServerStats) readDisk() {
@@ -194,13 +201,14 @@ func (widget *ServerStats) readDisk() {
 			total, _ := strconv.ParseInt(fields[1], 10, 64)
 			used, _ := strconv.ParseInt(fields[2], 10, 64)
 			if total > 0 {
-				widget.DiskTotalGB = float64(total) / 1024 / 1024 / 1024
-				widget.DiskUsedGB = float64(used) / 1024 / 1024 / 1024
-				widget.DiskPercent = int((used * 100) / total)
-			}
-			return
+			widget.DiskTotalGB = float64(total) / 1024 / 1024 / 1024
+			widget.DiskUsedGB = float64(used) / 1024 / 1024 / 1024
+			widget.DiskPercent = int((used * 100) / total)
+			widget.DiskScale = float64(widget.DiskPercent) / 100.0
 		}
+		return
 	}
+}
 }
 
 func (widget *ServerStats) readDocker() {

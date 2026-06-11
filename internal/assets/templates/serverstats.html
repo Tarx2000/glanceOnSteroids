@@ -10,8 +10,8 @@
       <span class="ss-value">{{ .CPUUser }}% user / {{ .CPUSystem }}% sys</span>
     </div>
     <div class="ss-bar-bg">
-      <div class="ss-bar-fill ss-bar-cpu-user" style="width: {{ .CPUUser }}%"></div>
-      <div class="ss-bar-fill ss-bar-cpu-system" style="width: {{ .CPUSystem }}%; left: {{ .CPUUser }}%"></div>
+      <div class="ss-bar-fill ss-bar-cpu-user" style="transform: scaleX({{ .CPUUserScale }})"></div>
+      <div class="ss-bar-fill ss-bar-cpu-system" style="transform: scaleX({{ .CPUSystemScale }}); left: {{ .CPUUser }}%"></div>
     </div>
   </div>
 
@@ -22,7 +22,7 @@
       <span class="ss-value">{{ printf "%.1f" .RAMUsedGB }} / {{ printf "%.1f" .RAMTotalGB }} GB</span>
     </div>
     <div class="ss-bar-bg">
-      <div class="ss-bar-fill ss-bar-ram" style="width: {{ .RAMPercent }}%"></div>
+      <div class="ss-bar-fill ss-bar-ram" style="transform: scaleX({{ .RAMScale }})"></div>
     </div>
   </div>
 
@@ -33,7 +33,7 @@
       <span class="ss-value">{{ printf "%.1f" .DiskUsedGB }} / {{ printf "%.1f" .DiskTotalGB }} GB</span>
     </div>
     <div class="ss-bar-bg">
-      <div class="ss-bar-fill ss-bar-disk" style="width: {{ .DiskPercent }}%"></div>
+      <div class="ss-bar-fill ss-bar-disk" style="transform: scaleX({{ .DiskScale }})"></div>
     </div>
   </div>
 

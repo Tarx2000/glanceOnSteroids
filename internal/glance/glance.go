@@ -88,8 +88,9 @@ func (p *Page) UpdateOutdatedWidgets() bool {
 	now := time.Now()
 
 	var wg sync.WaitGroup
-	ctx := context.Background()
-	
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// Semaphore to bound concurrency and prevent resource exhaustion
 	const maxConcurrentUpdates = 5
 	var sem = make(chan struct{}, maxConcurrentUpdates)
@@ -398,9 +399,13 @@ func (a *Application) HandleSpotifyCallback(w http.ResponseWriter, r *http.Reque
 	}
 	if res.ExpiresIn > 0 {
 		expiryTime := time.Now().Unix() + int64(res.ExpiresIn)
-		_ = dbSetSetting("spotify_access_token_expiry", strconv.FormatInt(expiryTime, 10))
+		if err := dbSetSetting("spotify_access_token_expiry", strconv.FormatInt(expiryTime, 10)); err != nil {
+			slog.Error("[Spotify] Failed to persist token expiry", "error", err)
+		}
 	}
-	_ = dbSetSetting("spotify_authorized", "true")
+	if err := dbSetSetting("spotify_authorized", "true"); err != nil {
+		slog.Error("[Spotify] Failed to persist authorized flag", "error", err)
+	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -787,13 +792,19 @@ func (a *Application) HandleWidgetAdd(w http.ResponseWriter, r *http.Request) {
 
 		// Write tokens to SQLite database if provided
 		if accessToken != "" {
-			_ = dbSetSetting("spotify_access_token", accessToken)
+			if err := dbSetSetting("spotify_access_token", accessToken); err != nil {
+				slog.Error("[Spotify] Failed to persist access token", "error", err)
+			}
 		}
 		if refreshToken != "" {
-			_ = dbSetSetting("spotify_refresh_token", refreshToken)
+			if err := dbSetSetting("spotify_refresh_token", refreshToken); err != nil {
+				slog.Error("[Spotify] Failed to persist refresh token", "error", err)
+			}
 		}
 		if accessToken != "" || refreshToken != "" {
-			_ = dbSetSetting("spotify_authorized", "true")
+			if err := dbSetSetting("spotify_authorized", "true"); err != nil {
+				slog.Error("[Spotify] Failed to persist authorized flag", "error", err)
+			}
 		}
 
 		// Write Client ID, Client Secret, and Redirect URL globally under the 'spotify' block in glance.yml if provided
@@ -1250,13 +1261,19 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 		delete(payload.Properties, "refresh_token")
 
 		if accessToken != "" {
-			_ = dbSetSetting("spotify_access_token", accessToken)
+			if err := dbSetSetting("spotify_access_token", accessToken); err != nil {
+				slog.Error("[Spotify] Failed to persist access token", "error", err)
+			}
 		}
 		if refreshToken != "" {
-			_ = dbSetSetting("spotify_refresh_token", refreshToken)
+			if err := dbSetSetting("spotify_refresh_token", refreshToken); err != nil {
+				slog.Error("[Spotify] Failed to persist refresh token", "error", err)
+			}
 		}
 		if accessToken != "" || refreshToken != "" {
-			_ = dbSetSetting("spotify_authorized", "true")
+			if err := dbSetSetting("spotify_authorized", "true"); err != nil {
+				slog.Error("[Spotify] Failed to persist authorized flag", "error", err)
+			}
 		}
 
 		if clientID != "" || clientSecret != "" || redirectURL != "" {
@@ -1361,9 +1378,10 @@ func (a *Application) reloadConfig() error {
 		
 		// Find matching old page
 		var oldPage *Page
-		for _, op := range oldPages {
+		for i := range oldPages {
+			op := &oldPages[i]
 			if op.Title == newPage.Title {
-				oldPage = &op
+				oldPage = op
 				break
 			}
 		}
@@ -1422,9 +1440,7 @@ func (a *Application) reloadConfig() error {
 
 	for i := range config.Pages {
 		page := &config.Pages[i]
-		go func(p *Page) {
-			p.UpdateOutdatedWidgets()
-		}(page)
+		page.UpdateOutdatedWidgets()
 	}
 
 	return nil
@@ -1507,12 +1523,14 @@ func saveNodeToDisk(path string, node *yaml.Node) error {
 }
 
 var yamlKnownIntKeys = map[string]bool{
-	"update-interval": true,
-	"height":          true,
-	"limit":           true,
-	"collapse-after":  true,
-	"thumbnail-height": true,
-	"port":            true,
+	"update-interval":    true,
+	"height":             true,
+	"limit":              true,
+	"collapse-after":     true,
+	"thumbnail-height":   true,
+	"port":               true,
+	"pull-requests-limit": true,
+	"issues-limit":        true,
 }
 
 // fixYamlScalarTypes walks the YAML AST and fixes scalar value nodes that should be
