@@ -52,6 +52,8 @@ func Main() int {
 		return 1
 	}
 
+	widget.GlobalTimezone = config.Server.Timezone
+
 	if options.Intent == CliIntentServe {
 		if err := initDB(options.ConfigPath); err != nil {
 			fmt.Printf("failed to initialize database: %v\n", err)

@@ -1597,38 +1597,78 @@ body.modal-open {
 .nw-widget {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 6px; /* Reduced gap from 10px to make widget compact */
 }
 
-.nw-hero {
-    text-align: center;
-    padding: 8px 0 4px;
-    border-bottom: 1px solid var(--color-widget-content-border);
+/* Container for the total cost gauge widget header.
+   No bottom border is used to let it flow seamlessly into the grid/box below. */
+.nw-gauge-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 8px 0 0; /* Reduced padding from 14px */
     margin-bottom: 2px;
 }
 
-.nw-hero-label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    opacity: 0.5;
-    margin-bottom: 6px;
+/* Wrapper to position the SVG gauge overlay and the text values. */
+.nw-gauge-wrapper {
+    position: relative;
+    width: 150px; /* Adjusted width to match the larger arc radius */
+    height: 78px; /* Height increased from 72px to prevent bottom glow clipping */
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
 }
 
-.nw-hero-value {
-    font-size: 2.2rem;
-    font-weight: 800;
+/* Position the SVG exactly over the wrapper box. */
+.nw-gauge-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+/* Clean static primary-colored semi-circular cradle. Pulsing and dash outline removed. */
+.nw-cradle-glow {
+    stroke: var(--color-primary);
+    stroke-width: 4.5;
+    opacity: 0.9;
+    filter: drop-shadow(0 1px 3px var(--color-primary));
+}
+
+/* Central text aligning position inside the SVG semi-circle. */
+.nw-gauge-center {
+    position: absolute;
+    bottom: 0px; /* Lowered for optimal centering */
+    left: 0;
+    right: 0;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+}
+
+/* Displays the 30-day total cost value in large high-contrast font. */
+.nw-gauge-value {
+    font-size: 2.1rem;
+    font-weight: 850;
     color: var(--color-text-highlight);
-    line-height: 1;
+    line-height: 1.1;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
+    margin-bottom: 2px;
 }
 
-.nw-hero-sub {
-    font-size: 0.7rem;
-    opacity: 0.4;
-    margin-top: 6px;
-    letter-spacing: 0.04em;
+/* Label indicating the cost period. */
+.nw-gauge-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.55;
+    font-weight: 600;
 }
 
 .nw-stats-grid {
@@ -1640,7 +1680,7 @@ body.modal-open {
 .nw-stat {
     background: var(--color-widget-background);
     border-radius: var(--border-radius);
-    padding: 10px 12px;
+    padding: 6px 10px; /* Reduced padding from 10px 12px for compactness */
     border: 1px solid var(--color-widget-content-border);
 }
 
@@ -1819,7 +1859,7 @@ body.modal-open {
 .nw-today {
     border: 1px solid var(--color-widget-content-border);
     border-radius: var(--border-radius);
-    padding: 8px 10px;
+    padding: 6px 10px; /* Reduced padding from 8px 10px for compactness */
 }
 
 .nw-today-title {
@@ -1834,7 +1874,7 @@ body.modal-open {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 3px 0;
+    padding: 2.5px 0; /* Slightly reduced row height */
 }
 
 .nw-today-row + .nw-today-row {
@@ -1851,6 +1891,37 @@ body.modal-open {
     font-weight: 600;
     color: var(--color-text-highlight);
     font-variant-numeric: tabular-nums;
+}
+
+/* Info notice message inside the today container during crossover period */
+.nw-notice-msg {
+    font-size: 0.65rem;
+    opacity: 0.75;
+    color: var(--color-primary);
+    text-align: center;
+    margin-bottom: 8px;
+    border-bottom: 1px dashed var(--color-widget-content-border);
+    padding-bottom: 5px;
+}
+
+/* Flash animation applied to updated stats values (e.g. token counts) */
+.nw-value-updated {
+    animation: nw-flash-update 0.8s cubic-bezier(0.25, 1, 0.5, 1);
+    display: inline-block;
+    transform-origin: center;
+}
+
+@keyframes nw-flash-update {
+    0% {
+        color: var(--color-primary);
+        text-shadow: 0 0 8px var(--color-primary);
+        transform: scale(1.1);
+    }
+    100% {
+        color: inherit;
+        text-shadow: none;
+        transform: scale(1);
+    }
 }
 
 /* ----------------------------------------------------

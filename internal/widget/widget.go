@@ -18,6 +18,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var GlobalTimezone string
+
 func New(widgetType string) (Widget, error) {
 	switch widgetType {
 	case "calendar":

@@ -1466,6 +1466,25 @@ function setupSettingsMenu() {
 
     if (!modal || !form) return;
 
+    // Dynamically populate supported timezones
+    const serverTimezoneSelect = form.elements["server_timezone"];
+    if (serverTimezoneSelect) {
+        while (serverTimezoneSelect.options.length > 1) {
+            serverTimezoneSelect.remove(1);
+        }
+        try {
+            const timezones = Intl.supportedValuesOf('timeZone');
+            timezones.forEach(tz => {
+                const opt = document.createElement("option");
+                opt.value = tz;
+                opt.textContent = tz;
+                serverTimezoneSelect.appendChild(opt);
+            });
+        } catch (e) {
+            console.error("Intl timezone listing not supported", e);
+        }
+    }
+
     // Fetch and display active configuration parameters
     const showSettings = async () => {
         try {
@@ -1485,6 +1504,7 @@ function setupSettingsMenu() {
             form.elements["server_host"].value = data.server.host || "";
             form.elements["server_port"].value = data.server.port || "";
             form.elements["server_assets_path"].value = data.server["assets-path"] || "";
+            form.elements["server_timezone"].value = data.server.timezone || "";
 
             // Map Spotify credentials
             form.elements["spotify_client_id"].value = data.spotify["client-id"] || "";
@@ -1555,7 +1575,8 @@ function setupSettingsMenu() {
             server: {
                 host: newHost,
                 port: newPort,
-                "assets-path": form.elements["server_assets_path"].value
+                "assets-path": form.elements["server_assets_path"].value,
+                timezone: form.elements["server_timezone"].value
             },
             theme: {
                 light: form.elements["theme_light"].checked,
@@ -1724,13 +1745,31 @@ function setupClocks() {
 // Re-fetches the page contents dynamically from the server and updates the DOM, re-binding all scripts and listeners.
 async function refreshPageContentsLive() {
     const pageElement = document.getElementById("page");
-    const wasEditMode = document.body.classList.contains("layout-edit-mode");
     
+    // Capture old stats values to animate updates
+    const oldValues = {};
+    if (pageElement) {
+        pageElement.querySelectorAll('.nw-stat-value, .nw-today-value, .nw-gauge-value, .nw-hero-value').forEach((el, index) => {
+            oldValues[index] = el.textContent.trim();
+        });
+    }
+
+    const wasEditMode = document.body.classList.contains("layout-edit-mode");
     ignoreReloadPageUntil = Date.now() + RELOAD_PAGE_IGNORE_DURATION_MS;
     
     try {
         const pageContents = await fetchPageContents(pageData.slug);
         pageElement.innerHTML = pageContents;
+        
+        // Match elements and highlight any changes with a flash transition
+        pageElement.querySelectorAll('.nw-stat-value, .nw-today-value, .nw-gauge-value, .nw-hero-value').forEach((el, index) => {
+            const oldValue = oldValues[index];
+            const newValue = el.textContent.trim();
+            if (oldValue !== undefined && oldValue !== newValue) {
+                el.classList.add('nw-value-updated');
+                setTimeout(() => el.classList.remove('nw-value-updated'), 1000);
+            }
+        });
     } catch (e) {
         console.error("[Refresh] Failed to reload page contents:", e);
         return;

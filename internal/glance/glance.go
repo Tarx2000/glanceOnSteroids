@@ -59,6 +59,7 @@ type Server struct {
 	Host       string    `yaml:"host"`
 	Port       uint16    `yaml:"port"`
 	AssetsPath string    `yaml:"assets-path"`
+	Timezone   string    `yaml:"timezone"`
 	StartedAt  time.Time `yaml:"-"`
 }
 
@@ -1417,6 +1418,8 @@ func (a *Application) reloadConfig() error {
 	a.slugToPage = newSlugToPage
 	a.configMu.Unlock()
 
+	widget.GlobalTimezone = config.Server.Timezone
+
 	for i := range config.Pages {
 		page := &config.Pages[i]
 		go func(p *Page) {
@@ -1550,6 +1553,7 @@ type serverSettingsPayload struct {
 	Host       string `json:"host" yaml:"host"`
 	Port       uint16 `json:"port" yaml:"port"`
 	AssetsPath string `json:"assets-path" yaml:"assets-path"`
+	Timezone   string `json:"timezone" yaml:"timezone"`
 }
 
 type themeSettingsPayload struct {
@@ -1614,6 +1618,7 @@ func (a *Application) HandleSettingsGet(w http.ResponseWriter, r *http.Request) 
 			Host:       a.Config.Server.Host,
 			Port:       a.Config.Server.Port,
 			AssetsPath: a.Config.Server.AssetsPath,
+			Timezone:   a.Config.Server.Timezone,
 		},
 		Theme: themeSettingsPayload{
 			Light:                          a.Config.Theme.Light,

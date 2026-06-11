@@ -37,6 +37,8 @@ type NeuralWatt struct {
 	TodayEnergyKwh     float64                  `yaml:"-"`
 	TodayTokens        int                     `yaml:"-"`
 	EstimatedTokenCost float64                  `yaml:"-"`
+	TodayDateLabel     string                   `yaml:"-"`
+	NoticeMessage      string                   `yaml:"-"`
 }
 
 // Configurable pricing parameters (USD per 1,000,000 tokens)
@@ -79,8 +81,35 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 		return
 	}
 
-	endDate := time.Now().Format("2006-01-02")
-	startDate := time.Now().AddDate(0, 0, -30).Format("2006-01-02")
+	// Load the global timezone configured in System Settings. If empty or invalid,
+	// fall back to UTC time.
+	loc := time.UTC
+	if GlobalTimezone != "" {
+		if l, err := time.LoadLocation(GlobalTimezone); err == nil {
+			loc = l
+		} else {
+			slog.Error("failed to load global timezone", "timezone", GlobalTimezone, "error", err)
+		}
+	}
+
+	// Format the "Today" date label in the user's configured local timezone
+	// (e.g., "Jun 11" instead of the active UTC day "Jun 10").
+	nowLocal := time.Now().In(loc)
+	todayDateLabel := nowLocal.Format("Jan 02")
+
+	// Check if the current local time falls into the 2-hour crossover window (00:00 to 02:00 local time),
+	// and set a short informational notice that the daily stats update at 2:00 AM (00:00 UTC).
+	localHour := nowLocal.Hour()
+	var noticeMessage string
+	if localHour >= 0 && localHour < 2 {
+		noticeMessage = "Stats update at 2:00 AM local (00:00 UTC)"
+	}
+
+	// Query and match metrics based on the active UTC day because the NeuralWatt API
+	// groups all timeseries and daily usage data strictly by UTC dates.
+	nowUTC := time.Now().UTC()
+	endDate := nowUTC.Format("2006-01-02")
+	startDate := nowUTC.AddDate(0, 0, -30).Format("2006-01-02")
 
 	energy, err := feed.FetchNeuralWattEnergy(apiKey, startDate, endDate)
 	if err != nil {
@@ -88,7 +117,7 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 		return
 	}
 
-	today := time.Now().Format("2006-01-02")
+	today := nowUTC.Format("2006-01-02")
 	todayCost := 0.0
 	todayRequests := 0
 	todayTokens := 0
@@ -183,6 +212,8 @@ func (widget *NeuralWatt) Update(ctx context.Context) {
 	widget.TodayEnergyKwh = todayEnergyKwh
 	widget.TodayTokens = todayTokens
 	widget.EstimatedTokenCost = estimatedTokenCost
+	widget.TodayDateLabel = todayDateLabel
+	widget.NoticeMessage = noticeMessage
 	widget.Unlock()
 
 	widget.canContinueUpdateAfterHandlingErr(nil)

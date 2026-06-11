@@ -3,10 +3,16 @@
 {{ define "widget-content" }}
 {{ if .Summary }}
 <div class="nw-widget" data-nw-expanded="false">
-  <div class="nw-hero">
-    <div class="nw-hero-label">Total Cost (30d)</div>
-    <div class="nw-hero-value">{{ printf "$%.2f" .Summary.Totals.TotalCostUSD }}</div>
-
+  <div class="nw-gauge-container">
+    <div class="nw-gauge-wrapper">
+      <svg class="nw-gauge-svg" viewBox="0 0 100 58">
+        <path class="nw-cradle-glow" d="M 10 48 A 40 40 0 0 1 90 48" fill="none" stroke-linecap="round"></path>
+      </svg>
+      <div class="nw-gauge-center">
+        <div class="nw-gauge-value">{{ printf "$%.2f" .Summary.Totals.TotalCostUSD }}</div>
+        <div class="nw-gauge-label">Total Cost (30d)</div>
+      </div>
+    </div>
   </div>
 
   <div class="nw-stats-grid">
@@ -28,7 +34,10 @@
   </div>
 
   <div class="nw-today">
-    <div class="nw-today-title">Today</div>
+    <div class="nw-today-title">Today ({{ .TodayDateLabel }})</div>
+    {{ if .NoticeMessage }}
+    <div class="nw-notice-msg">{{ .NoticeMessage }}</div>
+    {{ end }}
     <div class="nw-today-row">
       <span class="nw-today-label">Cost</span>
       <span class="nw-today-value">{{ printf "$%.2f" .TodayCost }}</span>
