@@ -15,7 +15,11 @@ type Videos struct {
 	VideoUrlTemplate string      `yaml:"video-url-template"`
 	Style            string      `yaml:"style"`
 	Channels         []string    `yaml:"channels"`
+	Playlists        []string    `yaml:"playlists"`
 	Limit            int         `yaml:"limit"`
+	CollapseAfter    int         `yaml:"collapse-after"`
+	CollapseAfterRows int        `yaml:"collapse-after-rows"`
+	IncludeShorts    bool        `yaml:"include-shorts"`
 }
 
 func (widget *Videos) Initialize() error {

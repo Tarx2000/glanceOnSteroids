@@ -161,6 +161,12 @@ let dragGhost = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 let dragPointerId = -1;
+let dragAfterCache = new Map();
+let hoveredTabSlug = null;
+let hoverTabTimer = null;
+
+const editPageStates = new Map();
+let currentEditPageSlug = null;
 
 function pushLayoutHistory() {
     const page = document.getElementById("page");
@@ -202,6 +208,36 @@ function updateUndoButtonState() {
         btnUndo.style.color = "var(--color-text-subdue)";
         btnUndo.style.pointerEvents = "none";
     }
+}
+
+function snapshotCurrentEditPage() {
+    if (!currentEditPageSlug) return;
+    const page = document.getElementById("page");
+    editPageStates.set(currentEditPageSlug, {
+        html: page ? page.innerHTML : "",
+        layoutHistory: layoutHistory.slice(),
+        historyIndex: historyIndex,
+        spacingModified: spacingModified,
+        originalSpacing: originalSpacing ? Object.assign({}, originalSpacing) : null
+    });
+}
+
+function restoreEditPageState(slug) {
+    const state = editPageStates.get(slug);
+    const page = document.getElementById("page");
+    if (state && page) {
+        page.innerHTML = state.html;
+        layoutHistory = state.layoutHistory.slice();
+        historyIndex = state.historyIndex;
+        spacingModified = state.spacingModified;
+        originalSpacing = state.originalSpacing ? Object.assign({}, state.originalSpacing) : null;
+    } else {
+        layoutHistory = [];
+        historyIndex = -1;
+        spacingModified = false;
+        originalSpacing = null;
+    }
+    currentEditPageSlug = slug;
 }
 
 function throttledDebounce(callback, maxDebounceTimes, debounceDelay) {
@@ -674,6 +710,9 @@ function debouncedVolumeSet(vol) {
 let pageRefreshTimeout;
 let ignoreReloadPageUntil = 0;
 const RELOAD_PAGE_IGNORE_DURATION_MS = 5000;
+let activeWS = null;
+let isInitialWsConnection = true;
+let allowEditModeRefresh = false;
 
 function triggerLivePageRefreshDebounced() {
     clearTimeout(pageRefreshTimeout);
@@ -685,7 +724,21 @@ function triggerLivePageRefreshDebounced() {
 // Establishes a WebSocket connection for real-time status syncing
 function setupWebSockets() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws`);
+    const ws = new WebSocket(`${protocol}//${window.location.host}/api/ws?page=${encodeURIComponent(pageData.slug)}`);
+    activeWS = ws;
+
+    ws.onopen = function () {
+        console.log("[WS] Connection established.");
+        if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "active_page", page: pageData.slug }));
+        }
+        if (isInitialWsConnection) {
+            isInitialWsConnection = false;
+        } else {
+            console.log("[WS] Reconnection: Syncing page contents for fresh updates...");
+            triggerLivePageRefreshDebounced();
+        }
+    };
 
     ws.onmessage = function (event) {
         try {
@@ -698,6 +751,11 @@ function setupWebSockets() {
                     localStorage.setItem("spotify_last_auth", msg.data.authorized ? "true" : "false");
                 }
                 updateSpotifyWidget(msg.data);
+            } else if (msg.type === "widget_update") {
+                console.log("[WS] Widget update received:", msg.data);
+                if (msg.data.page === pageData.slug) {
+                    refreshWidget(msg.data.col, msg.data.idx, msg.data.nested_idx);
+                }
             } else if (msg.type === "reload_page") {
                 if (Date.now() > ignoreReloadPageUntil) {
                     triggerLivePageRefreshDebounced();
@@ -737,6 +795,15 @@ function toggleEditMode(active) {
         layoutOriginalHTML = document.getElementById("page").innerHTML;
         layoutHistory = [layoutOriginalHTML];
         historyIndex = 0;
+        currentEditPageSlug = pageData.slug;
+        editPageStates.clear();
+        editPageStates.set(pageData.slug, {
+            html: layoutOriginalHTML,
+            layoutHistory: layoutHistory.slice(),
+            historyIndex: 0,
+            spacingModified: false,
+            originalSpacing: null
+        });
         body.classList.add("layout-edit-mode");
         btnEdit.style.display = "none";
         btnAdd.style.display = "block";
@@ -796,6 +863,8 @@ function toggleEditMode(active) {
         enableWidgetsDraggability(false);
         layoutHistory = [];
         historyIndex = -1;
+        editPageStates.clear();
+        currentEditPageSlug = null;
     }
 }
 
@@ -817,6 +886,7 @@ function enableWidgetsDraggability(enabled) {
         if (w.dataset.originalCol === undefined) {
             w.dataset.originalCol = colIdx;
             w.dataset.originalIdx = wIdx;
+            w.dataset.originalPage = pageData.slug;
             if (nestedIdx !== undefined) {
                 w.dataset.originalNestedIdx = nestedIdx;
             }
@@ -825,7 +895,8 @@ function enableWidgetsDraggability(enabled) {
         if (enabled) {
             w.classList.add("editable");
 
-            if (!w.querySelector(".widget-drag-handle")) {
+            const existingHandle = w.querySelector(".widget-drag-handle");
+            if (!existingHandle) {
                 const header = w.querySelector(".widget-header");
                 if (header) {
                     const handle = document.createElement("div");
@@ -835,18 +906,18 @@ function enableWidgetsDraggability(enabled) {
                     handle.addEventListener("pointerdown", function(e) { startPointerDrag(e, w); });
                     header.insertBefore(handle, header.firstChild);
                 }
+            } else {
+                existingHandle.addEventListener("pointerdown", function(e) { startPointerDrag(e, w); });
             }
 
-            // Inject a button container with Edit + Delete if not already present
-            if (!w.querySelector(".widget-edit-actions")) {
+            const existingActions = w.querySelector(".widget-edit-actions");
+            if (!existingActions) {
                 const header = w.querySelector(".widget-header");
                 if (header) {
-                    // Container to hold edit and delete buttons side-by-side, pushed to the right
                     const actionsDiv = document.createElement("div");
                     actionsDiv.className = "widget-edit-actions";
                     actionsDiv.style.cssText = "margin-left: auto; display: flex; align-items: center; gap: 6px; flex-shrink: 0;";
 
-                    // Edit/pencil button using inline SVG for reliable cross-platform rendering
                     const editBtn = document.createElement("button");
                     editBtn.type = "button";
                     editBtn.className = "widget-edit-btn";
@@ -862,7 +933,6 @@ function enableWidgetsDraggability(enabled) {
                         openEditWidgetModal(col, idx, nestedIdx);
                     });
 
-                    // Delete/trash button using inline SVG
                     const deleteBtn = document.createElement("button");
                     deleteBtn.type = "button";
                     deleteBtn.className = "widget-delete-btn";
@@ -886,6 +956,34 @@ function enableWidgetsDraggability(enabled) {
                     actionsDiv.appendChild(editBtn);
                     actionsDiv.appendChild(deleteBtn);
                     header.appendChild(actionsDiv);
+                }
+            } else {
+                const editBtn = existingActions.querySelector(".widget-edit-btn");
+                if (editBtn) {
+                    editBtn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const col = w.dataset.originalCol;
+                        const idx = parseInt(w.dataset.originalIdx);
+                        const nestedIdx = w.dataset.originalNestedIdx !== undefined ? parseInt(w.dataset.originalNestedIdx) : undefined;
+                        openEditWidgetModal(col, idx, nestedIdx);
+                    });
+                }
+                const deleteBtn = existingActions.querySelector(".widget-delete-btn");
+                if (deleteBtn) {
+                    deleteBtn.addEventListener("click", async (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const titleEl = w.querySelector(".uppercase");
+                        const title = titleEl ? titleEl.innerText : "Widget";
+                        if (await showConfirmModal(`Are you sure you want to delete the "${title}" widget?`)) {
+                            if (w.dataset.originalNestedIdx !== undefined) {
+                                await deleteWidget(`${w.dataset.originalCol}:${w.dataset.originalIdx}`, parseInt(w.dataset.originalNestedIdx));
+                            } else {
+                                await deleteWidget(w.dataset.originalCol, parseInt(w.dataset.originalIdx));
+                            }
+                        }
+                    });
                 }
             }
         } else {
@@ -926,13 +1024,19 @@ function enableWidgetsDraggability(enabled) {
 function getDragAfterElement(container, y) {
     // Select only direct child widgets to avoid offset calculations from nested widgets
     // Exclude the active drag placeholder to prevent cursor jitter
-    const draggableElements = [...container.querySelectorAll(":scope > .widget:not(.dragging):not(.widget-placeholder)")];
+    if (!dragAfterCache.has(container)) {
+        const draggableElements = [...container.querySelectorAll(":scope > .widget:not(.dragging):not(.widget-placeholder)")];
+        dragAfterCache.set(container, draggableElements.map(child => {
+            const box = child.getBoundingClientRect();
+            return { element: child, top: box.top, height: box.height };
+        }));
+    }
 
-    return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
+    const items = dragAfterCache.get(container);
+    return items.reduce((closest, child) => {
+        const offset = y - child.top - child.height / 2;
         if (offset < 0 && offset > closest.offset) {
-            return { offset: offset, element: child };
+            return { offset: offset, element: child.element };
         } else {
             return closest;
         }
@@ -953,54 +1057,87 @@ async function saveLayout() {
     if (btnCancel) btnCancel.disabled = true;
     if (header) header.style.pointerEvents = "none";
 
-    const headCol = document.querySelector(".page-column-head");
-    const columns = document.querySelectorAll(".page-column");
-    
     // Helper function to serialize a single widget (recursive for Group widgets)
-    function serializeWidget(w) {
+    function serializeWidget(w, fallbackSlug) {
+        const pageSlug = w.dataset.originalPage || fallbackSlug;
         if (w.classList.contains("widget-type-group")) {
             const nestedGroup = w.querySelector(".widget-group");
             const children = [];
             if (nestedGroup) {
                 const nestedWidgets = nestedGroup.querySelectorAll(":scope > .widget");
                 nestedWidgets.forEach(nw => {
-                    children.push(serializeWidget(nw));
+                    children.push(serializeWidget(nw, fallbackSlug));
                 });
             }
-            const baseId = `${w.dataset.originalCol}:${w.dataset.originalIdx}`;
+            const baseId = `${pageSlug}:${w.dataset.originalCol}:${w.dataset.originalIdx}`;
             return `${baseId}[${children.join(",")}]`;
         }
         
         if (w.dataset.originalNestedIdx !== undefined) {
-            return `${w.dataset.originalCol}:${w.dataset.originalIdx}:${w.dataset.originalNestedIdx}`;
+            return `${pageSlug}:${w.dataset.originalCol}:${w.dataset.originalIdx}:${w.dataset.originalNestedIdx}`;
         }
-        return `${w.dataset.originalCol}:${w.dataset.originalIdx}`;
+        return `${pageSlug}:${w.dataset.originalCol}:${w.dataset.originalIdx}`;
     }
 
-    const payloadHead = [];
-    if (headCol) {
-        const headWidgets = headCol.querySelectorAll(":scope > .widget");
-        headWidgets.forEach(w => {
-            payloadHead.push(serializeWidget(w));
-        });
+    function buildLayoutPayload(slug) {
+        const tempDiv = document.createElement("div");
+        if (slug === pageData.slug) {
+            const headCol = document.querySelector(".page-column-head");
+            const columns = document.querySelectorAll(".page-column");
+
+            const payloadHead = [];
+            if (headCol) {
+                headCol.querySelectorAll(":scope > .widget").forEach(w => {
+                    payloadHead.push(serializeWidget(w, slug));
+                });
+            }
+
+            const payloadColumns = [];
+            const payloadColumnSizes = [];
+            columns.forEach(col => {
+                const colWidgetsArr = [];
+                col.querySelectorAll(":scope > .widget").forEach(w => {
+                    colWidgetsArr.push(serializeWidget(w, slug));
+                });
+                payloadColumns.push(colWidgetsArr);
+                if (col.classList.contains("page-column-full")) payloadColumnSizes.push("full");
+                else if (col.classList.contains("page-column-small")) payloadColumnSizes.push("small");
+            });
+
+            return { page: slug, head: payloadHead, columns: payloadColumns, column_sizes: payloadColumnSizes };
+        } else {
+            const state = editPageStates.get(slug);
+            if (!state) return null;
+            tempDiv.innerHTML = state.html;
+
+            const headCol = tempDiv.querySelector(".page-column-head");
+            const columns = tempDiv.querySelectorAll(".page-column");
+
+            const payloadHead = [];
+            if (headCol) {
+                headCol.querySelectorAll(":scope > .widget").forEach(w => {
+                    payloadHead.push(serializeWidget(w, slug));
+                });
+            }
+
+            const payloadColumns = [];
+            const payloadColumnSizes = [];
+            columns.forEach(col => {
+                const colWidgetsArr = [];
+                col.querySelectorAll(":scope > .widget").forEach(w => {
+                    colWidgetsArr.push(serializeWidget(w, slug));
+                });
+                payloadColumns.push(colWidgetsArr);
+                if (col.classList.contains("page-column-full")) payloadColumnSizes.push("full");
+                else if (col.classList.contains("page-column-small")) payloadColumnSizes.push("small");
+            });
+
+            return { page: slug, head: payloadHead, columns: payloadColumns, column_sizes: payloadColumnSizes };
+        }
     }
 
-    const payloadColumns = [];
-    const payloadColumnSizes = [];
-    columns.forEach(col => {
-        const colWidgets = col.querySelectorAll(":scope > .widget");
-        const colWidgetsArr = [];
-        colWidgets.forEach(w => {
-            colWidgetsArr.push(serializeWidget(w));
-        });
-        payloadColumns.push(colWidgetsArr);
-        
-        if (col.classList.contains("page-column-full")) {
-            payloadColumnSizes.push("full");
-        } else if (col.classList.contains("page-column-small")) {
-            payloadColumnSizes.push("small");
-        }
-    });
+    // Snapshot current page before saving
+    snapshotCurrentEditPage();
 
     activeLayoutSaved = true;
 
@@ -1048,32 +1185,57 @@ async function saveLayout() {
     }
 
     try {
-        const response = await fetch("/api/layout/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                page: pageData.slug,
-                head: payloadHead,
-                columns: payloadColumns,
-                column_sizes: payloadColumnSizes
-            })
-        });
+        const pageSlugs = [...editPageStates.keys()];
+        const payloads = [];
+        for (const slug of pageSlugs) {
+            const payload = buildLayoutPayload(slug);
+            if (payload) payloads.push(payload);
+        }
 
-        if (response.ok) {
-            const wasSpacingModified = spacingModified;
-            toggleEditMode(false);
-            showToast("Layout saved successfully", "success");
-            
-            if (wasSpacingModified) {
-                // Perform a full reload to apply spacing styles from config templates
-                window.location.reload();
+        const batchPayload = { pages: payloads, single_page: payloads.length === 1 };
+
+        if (payloads.length === 1) {
+            const response = await fetch("/api/layout/save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payloads[0])
+            });
+            if (!response.ok) {
+                activeLayoutSaved = false;
+                const err = await response.text();
+                showToast("Failed to save layout: " + err, "error");
             } else {
-                await refreshPageContentsLive();
+                const wasSpacingModified = spacingModified;
+                toggleEditMode(false);
+                showToast("Layout saved successfully", "success");
+                if (wasSpacingModified) {
+                    window.location.reload();
+                } else {
+                    allowEditModeRefresh = true;
+                    await refreshPageContentsLive();
+                }
             }
         } else {
-            activeLayoutSaved = false;
-            const err = await response.text();
-            showToast("Failed to save layout: " + err, "error");
+            const response = await fetch("/api/layout/batch-save", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(batchPayload)
+            });
+            if (!response.ok) {
+                activeLayoutSaved = false;
+                const err = await response.text();
+                showToast("Failed to save layout: " + err, "error");
+            } else {
+                const wasSpacingModified = spacingModified;
+                toggleEditMode(false);
+                showToast("Layout saved successfully", "success");
+                if (wasSpacingModified) {
+                    window.location.reload();
+                } else {
+                    allowEditModeRefresh = true;
+                    await refreshPageContentsLive();
+                }
+            }
         }
     } catch (err) {
         activeLayoutSaved = false;
@@ -1105,7 +1267,15 @@ async function deleteWidget(colIdx, widgetIdx) {
 
     if (response.ok) {
         showToast("Widget deleted", "success");
+        allowEditModeRefresh = true;
         await refreshPageContentsLive();
+        if (document.body.classList.contains("layout-edit-mode")) {
+            enableWidgetsDraggability(false);
+            enableWidgetsDraggability(true);
+            layoutHistory = [document.getElementById("page").innerHTML];
+            historyIndex = 0;
+            snapshotCurrentEditPage();
+        }
     } else {
         const err = await response.text();
         showToast("Failed to delete widget: " + err, "error");
@@ -1116,71 +1286,253 @@ async function deleteWidget(colIdx, widgetIdx) {
 // Widget Addition Modal & Form Generation
 // ----------------------------------------------------
 
+const defaultCacheDurations = {
+    calendar: "10m",
+    "custom-api": "1m",
+    "hacker-news": "30m",
+    monitor: "5m",
+    neuralwatt: "10m",
+    reddit: "30m",
+    releases: "2h",
+    repository: "1h",
+    rss: "1h",
+    "server-stats": "30s",
+    stocks: "1h",
+    markets: "1h",
+    "twitch-channels": "10m",
+    "twitch-top-games": "10m",
+    videos: "1h",
+    weather: "1h"
+};
+
+function parseDurationToHoursMinutes(durationStr) {
+    if (!durationStr) return { hours: 0, minutes: 15 };
+    const matches = durationStr.match(/^(\d+)(s|m|h|d)$/);
+    if (!matches) return { hours: 0, minutes: 15 };
+    const val = parseInt(matches[1], 10);
+    const unit = matches[2];
+    let totalMinutes = 0;
+    if (unit === 's') {
+        totalMinutes = Math.max(1, Math.round(val / 60));
+    } else if (unit === 'm') {
+        totalMinutes = val;
+    } else if (unit === 'h') {
+        totalMinutes = val * 60;
+    } else if (unit === 'd') {
+        totalMinutes = val * 24 * 60;
+    }
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 24) {
+        return { hours: 24, minutes: 0 };
+    }
+    return { hours, minutes };
+}
+
 const widgetFieldTemplates = {
     calendar: `
         <div id="google-ip-warning" style="display: none; font-size: 0.8em; color: var(--color-negative); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-negative); padding: 8px; border-radius: 4px; background: rgba(255, 69, 58, 0.05);"></div>
         <div id="google-redirect-hint" style="font-size: 0.8em; color: var(--color-primary); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-primary); padding: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.2);">Redirect URI: http://localhost:8086/api/google/callback</div>
-
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client ID (Optional)</label>
         <input type="text" name="google_client_id" placeholder="Your Google Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client Secret (Optional)</label>
         <input type="password" name="google_client_secret" placeholder="Your Google Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Redirect URL (Optional)</label>
         <input type="url" name="google_redirect_url" placeholder="http://localhost:8086/api/google/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Viewport Limit (Initial Entries)</label>
-        <input type="number" name="viewport-limit" value="5" min="1" max="50" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Max Days Ahead</label>
-        <input type="number" name="max-days-ahead" value="14" min="1" max="365" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Viewport Limit (Initial Entries)</label>
+                <input type="number" name="viewport-limit" value="5" min="1" max="50" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Max Days Ahead</label>
+                <input type="number" name="max-days-ahead" value="14" min="1" max="365" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Time Format</label>
         <select name="time-format" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;">
             <option value="24h">24 Hour Format</option>
             <option value="12h">12 Hour Format (AM/PM)</option>
         </select>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">First Day of Week</label>
+        <select name="first-day-of-week" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;">
+            <option value="monday">Monday</option>
+            <option value="sunday">Sunday</option>
+            <option value="tuesday">Tuesday</option>
+            <option value="wednesday">Wednesday</option>
+            <option value="thursday">Thursday</option>
+            <option value="friday">Friday</option>
+            <option value="saturday">Saturday</option>
+        </select>
         <div id="google-calendars-container" style="display: none; margin-bottom: 10px;">
             <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Select Calendars</label>
-            <div id="google-calendars-checkboxes" style="max-height: 150px; overflow-y: auto; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px;">
-                <!-- Dynamically populated via API -->
-            </div>
+            <div id="google-calendars-checkboxes" style="max-height: 150px; overflow-y: auto; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px;"></div>
         </div>
     `,
     weather: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Location</label>
         <input type="text" name="location" placeholder="e.g. London, United Kingdom" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Units</label>
-        <select name="units" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
-            <option value="metric">Celsius (Metric)</option>
-            <option value="imperial">Fahrenheit (Imperial)</option>
-        </select>
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Units</label>
+                <select name="units" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="metric">Celsius (Metric)</option>
+                    <option value="imperial">Fahrenheit (Imperial)</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Hour Format</label>
+                <select name="hour-format" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="12h">12 Hour</option>
+                    <option value="24h">24 Hour</option>
+                </select>
+            </div>
+        </div>
+        <div style="margin-bottom: 10px; display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="hide-location" style="cursor: pointer;" />
+                Hide Location Name
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="show-area-name" style="cursor: pointer;" />
+                Show State/Area Name
+            </label>
+        </div>
     `,
     iframe: `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">IFrame URL</label>
-        <input type="url" name="url" placeholder="https://example.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Height</label>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Source URL</label>
+        <input type="url" name="source" placeholder="https://example.com" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Height (px)</label>
         <input type="number" name="height" value="300" min="50" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
     reddit: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Subreddit</label>
-        <input type="text" name="subreddit" placeholder="e.g. selfhosted" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <input type="text" name="subreddit" placeholder="e.g. selfhosted" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Style</label>
+                <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">Vertical List</option>
+                    <option value="horizontal-cards">Horizontal Cards</option>
+                    <option value="vertical-cards">Vertical Cards</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Sort By</label>
+                <select name="sort-by" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="hot">Hot</option>
+                    <option value="new">New</option>
+                    <option value="top">Top</option>
+                    <option value="rising">Rising</option>
+                </select>
+            </div>
+        </div>
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Top Period (if Sort=Top)</label>
+                <select name="top-period" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="day">Day</option>
+                    <option value="hour">Hour</option>
+                    <option value="week">Week</option>
+                    <option value="month">Month</option>
+                    <option value="year">Year</option>
+                    <option value="all">All Time</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Extra Sort</label>
+                <select name="extra-sort-by" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">None</option>
+                    <option value="engagement">Engagement</option>
+                </select>
+            </div>
+        </div>
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Limit</label>
+                <input type="number" name="limit" value="15" min="1" max="500" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Collapse After</label>
+                <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Search Keywords (Optional)</label>
+        <input type="text" name="search" placeholder="e.g. selfhosted" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <div style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="show-thumbnails" style="cursor: pointer;" />
+                Show Thumbnails
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="show-flairs" style="cursor: pointer;" />
+                Show Flairs
+            </label>
+        </div>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Comments URL Template (Optional)</label>
+        <input type="text" name="comments-url-template" placeholder="https://www.reddit.com/{POST-PATH}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Request URL Template (Optional)</label>
+        <input type="text" name="request-url-template" placeholder="https://proxy/{REQUEST-URL}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Proxy URL (Optional)</label>
+        <input type="text" name="proxy" placeholder="http://user:pass@proxy.com:8080" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
     rss: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">RSS Feed URLs</label>
         <div class="rss-items" style="margin-bottom: 10px;"></div>
-        <button type="button" id="btn-add-rss-feed" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit;">+ Add Feed URL</button>
+        <button type="button" id="btn-add-rss-feed" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 15px;">+ Add Feed URL</button>
+        <div style="display: flex; gap: 15px; margin-bottom: 12px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Appearance Style</label>
+                <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="vertical-list">Vertical List</option>
+                    <option value="detailed-list">Detailed List</option>
+                    <option value="horizontal-cards">Horizontal Cards</option>
+                    <option value="horizontal-cards-2">Horizontal Cards 2</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Max Articles (Limit)</label>
+                <input type="number" name="limit" value="25" min="1" max="500" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <div style="display: flex; gap: 15px; margin-bottom: 12px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Thumbnail Height (rem)</label>
+                <input type="number" step="0.1" name="thumbnail-height" value="10" min="0" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Card Height (rem)</label>
+                <input type="number" step="0.1" name="card-height" value="27" min="0" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <div style="display: flex; gap: 15px; margin-bottom: 12px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Collapse After</label>
+                <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <div style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="preserve-order" style="cursor: pointer;" />
+                Preserve Original Order of Feeds
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="single-line-titles" style="cursor: pointer;" />
+                Single Line Titles (Vertical List Only)
+            </label>
+        </div>
     `,
-    /* 
-       Stocks widget template with dynamic stock items list 
-       and sort/style settings.
-    */
     stocks: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Stock Symbols & Names</label>
         <span style="display: block; font-size: 0.8em; opacity: 0.6; margin-bottom: 8px;">Data provided by Yahoo Finance</span>
         <div class="stocks-items" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-stock-symbol" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 12px;">+ Add Symbol</button>
-        <div style="display: flex; gap: 15px;">
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
             <div style="flex: 1;">
                 <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Sort By</label>
                 <select name="sort-by" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
                     <option value="">Default (Order defined)</option>
+                    <option value="change">Change</option>
                     <option value="absolute-change">Absolute Change</option>
                 </select>
             </div>
@@ -1188,26 +1540,26 @@ const widgetFieldTemplates = {
                 <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Style</label>
                 <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
                     <option value="">Default List</option>
-                    <option value="dynamic-columns-experimental">Dynamic Columns (Experimental)</option>
                     <option value="horizontal-cards">Horizontal Cards</option>
                 </select>
             </div>
         </div>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Chart Link Template (Optional)</label>
+        <input type="text" name="chart-link-template" placeholder="https://www.tradingview.com/chart/?symbol={SYMBOL}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Symbol Link Template (Optional)</label>
+        <input type="text" name="symbol-link-template" placeholder="https://www.google.com/search?tbm=nws&q={SYMBOL}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
-    /* 
-       Markets widget template with dynamic market items list 
-       and sort/style settings.
-    */
     markets: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Market Symbols & Names</label>
         <span style="display: block; font-size: 0.8em; opacity: 0.6; margin-bottom: 8px;">Data provided by Yahoo Finance</span>
         <div class="stocks-items" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-stock-symbol" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 12px;">+ Add Symbol</button>
-        <div style="display: flex; gap: 15px;">
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
             <div style="flex: 1;">
                 <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Sort By</label>
                 <select name="sort-by" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
                     <option value="">Default (Order defined)</option>
+                    <option value="change">Change</option>
                     <option value="absolute-change">Absolute Change</option>
                 </select>
             </div>
@@ -1215,21 +1567,70 @@ const widgetFieldTemplates = {
                 <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Style</label>
                 <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
                     <option value="">Default List</option>
-                    <option value="dynamic-columns-experimental">Dynamic Columns (Experimental)</option>
                     <option value="horizontal-cards">Horizontal Cards</option>
                 </select>
             </div>
         </div>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Chart Link Template (Optional)</label>
+        <input type="text" name="chart-link-template" placeholder="https://www.tradingview.com/chart/?symbol={SYMBOL}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Symbol Link Template (Optional)</label>
+        <input type="text" name="symbol-link-template" placeholder="https://www.google.com/search?tbm=nws&q={SYMBOL}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
     videos: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">YouTube Channel IDs</label>
         <div class="videos-items" style="margin-bottom: 10px;"></div>
-        <button type="button" id="btn-add-videos-channel" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit;">+ Add Channel ID</button>
+        <button type="button" id="btn-add-videos-channel" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 10px;">+ Add Channel ID</button>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">YouTube Playlist IDs (Optional)</label>
+        <div class="videos-playlist-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-videos-playlist" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 10px;">+ Add Playlist ID</button>
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Style</label>
+                <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="horizontal-cards">Horizontal Cards</option>
+                    <option value="vertical-list">Vertical List</option>
+                    <option value="grid-cards">Grid Cards</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Limit</label>
+                <input type="number" name="limit" value="25" min="1" max="500" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Collapse After</label>
+                <input type="number" name="collapse-after" value="7" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Collapse After Rows (Grid)</label>
+                <input type="number" name="collapse-after-rows" value="4" min="1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Video URL Template (Optional)</label>
+        <input type="text" name="video-url-template" placeholder="https://www.youtube.com/watch?v={VIDEO-ID}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+            <input type="checkbox" name="include-shorts" style="cursor: pointer;" />
+            Include Shorts
+        </label>
     `,
     "twitch-channels": `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Twitch Channel Names</label>
         <div class="twitch-items" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-twitch-channel" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit;">+ Add Channel</button>
+        <div style="display: flex; gap: 15px; margin-top: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Sort By</label>
+                <select name="sort-by" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="viewers">Viewers</option>
+                    <option value="live">Live First</option>
+                </select>
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Collapse After</label>
+                <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
     `,
     repository: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Repository (owner/repo)</label>
@@ -1245,6 +1646,10 @@ const widgetFieldTemplates = {
                 <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Issues Limit</label>
                 <input type="number" name="issues-limit" value="3" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
             </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Commits Limit</label>
+                <input type="number" name="commits-limit" value="-1" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
         </div>
     `,
     releases: `
@@ -1253,31 +1658,89 @@ const widgetFieldTemplates = {
         <button type="button" id="btn-add-release-repo" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 10px;">+ Add Repository</button>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitHub Token (Optional)</label>
         <input type="password" name="token" placeholder="e.g. ghp_..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Release Limit</label>
-        <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Collapse After</label>
-        <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">GitLab Token (Optional)</label>
+        <input type="password" name="gitlab-token" placeholder="e.g. glpat-..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <div style="display: flex; gap: 15px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Limit</label>
+                <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Collapse After</label>
+                <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+            <input type="checkbox" name="show-source-icon" style="cursor: pointer;" />
+            Show Source Icon
+        </label>
     `,
     monitor: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Monitored Sites</label>
         <div class="monitor-items" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-monitor-site" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; transition: opacity 0.2s;">+ Add Another Site</button>
+        <div style="display: flex; gap: 15px; margin-top: 12px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Style</label>
+                <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">Default</option>
+                    <option value="compact">Compact</option>
+                </select>
+            </div>
+        </div>
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+            <input type="checkbox" name="show-failing-only" style="cursor: pointer;" />
+            Show Failing Only
+        </label>
     `,
     bookmarks: `
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Group Title</label>
-        <input type="text" name="group_title" placeholder="e.g. My Links" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Group Title (Optional)</label>
+        <input type="text" name="group_title" placeholder="e.g. My Links" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Group Color (HSL)</label>
+        <input type="text" name="group_color" placeholder="e.g. 200 50 50" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Bookmark Links</label>
         <div class="bookmark-links" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-bookmark-link" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; transition: opacity 0.2s;">+ Add Another Link</button>
     `,
     clock: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Hour Format</label>
-        <select name="hour-format" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+        <select name="hour-format" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;">
             <option value="24h">24 Hour (e.g. 17:00)</option>
             <option value="12h">12 Hour (e.g. 5:00 PM)</option>
         </select>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Additional Timezones</label>
+        <div class="timezone-items" style="margin-bottom: 10px;"></div>
+        <button type="button" id="btn-add-timezone" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit;">+ Add Timezone</button>
     `,
     "custom-api": `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">API URL (Optional)</label>
+        <input type="url" name="url" placeholder="https://api.example.com/data" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">HTTP Method</label>
+        <select name="method" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;">
+            <option value="GET">GET</option>
+            <option value="POST">POST</option>
+            <option value="PUT">PUT</option>
+            <option value="PATCH">PATCH</option>
+            <option value="DELETE">DELETE</option>
+            <option value="OPTIONS">OPTIONS</option>
+            <option value="HEAD">HEAD</option>
+        </select>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Custom Headers (Key: Value per line)</label>
+        <textarea name="headers" placeholder="x-api-key: your-api-key" style="width: 100%; height: 50px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; resize: vertical; outline: none; font-size: 0.85em; margin-bottom: 10px;"></textarea>
+        <div style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="frameless" style="cursor: pointer;" />
+                Frameless (remove border/padding)
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="allow-insecure" style="cursor: pointer;" />
+                Allow Insecure Certificates
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="skip-json-validation" style="cursor: pointer;" />
+                Skip JSON Validation
+            </label>
+        </div>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">HTML/Go-Template Content</label>
         <textarea name="template" placeholder="<div>{{ .Title }}</div>" required style="width: 100%; height: 120px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; resize: vertical; outline: none;"></textarea>
     `,
@@ -1293,10 +1756,16 @@ const widgetFieldTemplates = {
             <option value="">None</option>
             <option value="engagement">Engagement</option>
         </select>
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Post Limit</label>
-        <input type="number" name="limit" value="15" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Collapse After</label>
-        <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Post Limit</label>
+                <input type="number" name="limit" value="15" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Collapse After</label>
+                <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Comments URL Template (Optional)</label>
         <input type="text" name="comments-url-template" placeholder="https://news.ycombinator.com/item?id={POST-ID}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
@@ -1316,10 +1785,16 @@ const widgetFieldTemplates = {
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Excluded Game Titles</label>
         <div class="twitch-exclude-items" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-twitch-exclude" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; margin-bottom: 10px;">+ Add Excluded Game</button>
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Limit</label>
-        <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Collapse After</label>
-        <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <div style="display: flex; gap: 15px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Limit</label>
+                <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Collapse After</label>
+                <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
     `,
     neuralwatt: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">NeuralWatt API Key</label>
@@ -1329,6 +1804,9 @@ const widgetFieldTemplates = {
     `,
     "server-stats": `
         <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 10px;">Zeigt CPU, RAM, Disk, Docker und Uptime des Servers an.</p>
+    `,
+    group: `
+        <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 10px;">Group widgets together using tabs. Add nested widgets via the layout editor after creating this group.</p>
     `
 };
 
@@ -1373,6 +1851,29 @@ function setupAddWidgetModal() {
         const type = typeSelect.value;
         fieldsContainer.innerHTML = widgetFieldTemplates[type] || `<p style="font-size:0.85em; opacity:0.6; text-align:center;">This widget type does not require any properties.</p>`;
 
+        if (defaultCacheDurations[type]) {
+            const cacheWrapper = document.createElement("div");
+            cacheWrapper.style.cssText = "margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--color-separator);";
+            cacheWrapper.innerHTML = `
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Update Interval</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
+                        <input type="number" name="cache-hours" min="0" max="24" value="0" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                        <span style="font-size: 0.9em; opacity: 0.7;">h</span>
+                    </div>
+                    <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
+                        <input type="number" name="cache-minutes" min="0" max="59" value="15" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                        <span style="font-size: 0.9em; opacity: 0.7;">m</span>
+                    </div>
+                </div>
+            `;
+            fieldsContainer.insertBefore(cacheWrapper, fieldsContainer.firstChild);
+            
+            const durationObj = parseDurationToHoursMinutes(defaultCacheDurations[type]);
+            cacheWrapper.querySelector('[name="cache-hours"]').value = durationObj.hours;
+            cacheWrapper.querySelector('[name="cache-minutes"]').value = durationObj.minutes;
+        }
+
         const hideTitleWrapper = document.createElement("div");
         hideTitleWrapper.style.cssText = "margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--color-separator);";
         hideTitleWrapper.innerHTML = `
@@ -1409,23 +1910,91 @@ function setupAddWidgetModal() {
         const properties = {};
 
         formData.forEach((value, key) => {
-            if (key === "hide-title") return;
+            if (key === "hide-title" || key === "cache-hours" || key === "cache-minutes") return;
             if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories") {
                 // Obsolete comma-separated keys; skipped to avoid noise
-            } else if (key === "height" || key === "update-interval" || key === "limit" || key === "collapse-after" || key === "pull-requests-limit" || key === "issues-limit" || key === "viewport-limit" || key === "max-days-ahead") {
+            } else if (key === "height" || key === "update-interval" || key === "limit" || key === "collapse-after" || key === "pull-requests-limit" || key === "issues-limit" || key === "viewport-limit" || key === "max-days-ahead" || key === "commits-limit" || key === "collapse-after-rows") {
                 properties[key] = parseInt(value, 10);
+            } else if (key === "thumbnail-height" || key === "card-height") {
+                properties[key] = parseFloat(value);
             } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
                 // Handled separately below
-            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id") {
+            } else if (key === "rss_url" || key === "rss_title" || key === "rss_hide_categories" || key === "rss_hide_description" || key === "rss_limit" || key === "rss_item_link_prefix" || key === "rss_headers" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "videos_playlist" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id" || key === "timezone_id" || key === "timezone_label" || key === "monitor_site_check_url" || key === "monitor_site_icon" || key === "monitor_site_timeout" || key === "monitor_site_alt_status") {
                 // Handled separately below
             } else {
                 properties[key] = value;
             }
         });
 
+        let hours = parseInt(formData.get("cache-hours") || "0", 10);
+        let minutes = parseInt(formData.get("cache-minutes") || "0", 10);
+        hours = Math.max(0, Math.min(24, hours));
+        minutes = Math.max(0, Math.min(59, minutes));
+        if (hours === 0 && minutes === 0) {
+            minutes = 1;
+        }
+        if (defaultCacheDurations[typeSelect.value]) {
+            properties["cache"] = `${hours * 60 + minutes}m`;
+        }
+
         const hideTitleInput = form.elements["hide-title"];
         if (hideTitleInput) {
             properties["hide-title"] = hideTitleInput.checked;
+        }
+
+        const preserveOrderInput = form.elements["preserve-order"];
+        if (preserveOrderInput) {
+            properties["preserve-order"] = preserveOrderInput.checked;
+        }
+
+        const singleLineTitlesInput = form.elements["single-line-titles"];
+        if (singleLineTitlesInput) {
+            properties["single-line-titles"] = singleLineTitlesInput.checked;
+        }
+
+        const showThumbnailsInput = form.elements["show-thumbnails"];
+        if (showThumbnailsInput) {
+            properties["show-thumbnails"] = showThumbnailsInput.checked;
+        }
+        const showFlairsInput = form.elements["show-flairs"];
+        if (showFlairsInput) {
+            properties["show-flairs"] = showFlairsInput.checked;
+        }
+        const includeShortsInput = form.elements["include-shorts"];
+        if (includeShortsInput) {
+            properties["include-shorts"] = includeShortsInput.checked;
+        }
+        const showSourceIconInput = form.elements["show-source-icon"];
+        if (showSourceIconInput) {
+            properties["show-source-icon"] = showSourceIconInput.checked;
+        }
+        const showFailingOnlyInput = form.elements["show-failing-only"];
+        if (showFailingOnlyInput) {
+            properties["show-failing-only"] = showFailingOnlyInput.checked;
+        }
+        const hideLocationInput = form.elements["hide-location"];
+        if (hideLocationInput) {
+            properties["hide-location"] = hideLocationInput.checked;
+        }
+        const showAreaNameInput = form.elements["show-area-name"];
+        if (showAreaNameInput) {
+            properties["show-area-name"] = showAreaNameInput.checked;
+        }
+        const framelessInput = form.elements["frameless"];
+        if (framelessInput) {
+            properties["frameless"] = framelessInput.checked;
+        }
+        const allowInsecureInput = form.elements["allow-insecure"];
+        if (allowInsecureInput) {
+            properties["allow-insecure"] = allowInsecureInput.checked;
+        }
+        const skipJsonValidationInput = form.elements["skip-json-validation"];
+        if (skipJsonValidationInput) {
+            properties["skip-json-validation"] = skipJsonValidationInput.checked;
+        }
+        const hideSwapInput = form.elements["hide-swap"];
+        if (hideSwapInput) {
+            properties["hide-swap"] = hideSwapInput.checked;
         }
 
         const type = typeSelect.value;
@@ -1433,17 +2002,54 @@ function setupAddWidgetModal() {
         // Dynamic lists collector for adding a new widget
         if (type === "rss") {
             const list = [];
-            const urls = formData.getAll("rss_url");
-            const titles = formData.getAll("rss_title");
-            for (let i = 0; i < urls.length; i++) {
-                if (urls[i].trim()) {
-                    const obj = { url: urls[i].trim() };
-                    if (titles[i] && titles[i].trim()) {
-                        obj.title = titles[i].trim();
+            const items = form.querySelectorAll(".rss-item");
+            items.forEach(item => {
+                const urlInput = item.querySelector("[name='rss_url']");
+                const url = urlInput ? urlInput.value.trim() : "";
+                if (url) {
+                    const titleInput = item.querySelector("[name='rss_title']");
+                    const hideCategoriesCb = item.querySelector("[name='rss_hide_categories']");
+                    const hideDescriptionCb = item.querySelector("[name='rss_hide_description']");
+                    const limitInput = item.querySelector("[name='rss_limit']");
+                    const itemLinkPrefixInput = item.querySelector("[name='rss_item_link_prefix']");
+                    const headersTextarea = item.querySelector("[name='rss_headers']");
+                    
+                    const obj = { url: url };
+                    if (titleInput && titleInput.value.trim()) {
+                        obj.title = titleInput.value.trim();
+                    }
+                    if (hideCategoriesCb && hideCategoriesCb.checked) {
+                        obj["hide-categories"] = true;
+                    }
+                    if (hideDescriptionCb && hideDescriptionCb.checked) {
+                        obj["hide-description"] = true;
+                    }
+                    if (limitInput && limitInput.value.trim()) {
+                        obj.limit = parseInt(limitInput.value.trim(), 10);
+                    }
+                    if (itemLinkPrefixInput && itemLinkPrefixInput.value.trim()) {
+                        obj["item-link-prefix"] = itemLinkPrefixInput.value.trim();
+                    }
+                    if (headersTextarea && headersTextarea.value.trim()) {
+                        const headersObj = {};
+                        const lines = headersTextarea.value.trim().split("\n");
+                        lines.forEach(line => {
+                            const colonIdx = line.indexOf(":");
+                            if (colonIdx !== -1) {
+                                const k = line.substring(0, colonIdx).trim();
+                                const v = line.substring(colonIdx + 1).trim();
+                                if (k && v) {
+                                    headersObj[k] = v;
+                                }
+                            }
+                        });
+                        if (Object.keys(headersObj).length > 0) {
+                            obj.headers = headersObj;
+                        }
                     }
                     list.push(obj);
                 }
-            }
+            });
             properties["feeds"] = list;
         }
         if (type === "stocks" || type === "markets") {
@@ -1466,6 +2072,7 @@ function setupAddWidgetModal() {
         }
         if (type === "videos") {
             properties["channels"] = formData.getAll("videos_channel").map(s => s.trim()).filter(Boolean);
+            properties["playlists"] = formData.getAll("videos_playlist").map(s => s.trim()).filter(Boolean);
         }
         if (type === "twitch-channels") {
             properties["channels"] = formData.getAll("twitch_channel").map(s => s.trim()).filter(Boolean);
@@ -1477,7 +2084,47 @@ function setupAddWidgetModal() {
             properties["exclude"] = formData.getAll("twitch_exclude").map(s => s.trim()).filter(Boolean);
         }
 
-        // Special handling for monitor site items
+        if (type === "custom-api") {
+            const headersTextarea = form.querySelector("[name='headers']");
+            if (headersTextarea && headersTextarea.value.trim()) {
+                const headersObj = {};
+                const lines = headersTextarea.value.trim().split("\n");
+                lines.forEach(line => {
+                    const colonIdx = line.indexOf(":");
+                    if (colonIdx !== -1) {
+                        const k = line.substring(0, colonIdx).trim();
+                        const v = line.substring(colonIdx + 1).trim();
+                        if (k && v) {
+                            headersObj[k] = v;
+                        }
+                    }
+                });
+                if (Object.keys(headersObj).length > 0) {
+                    properties["headers"] = headersObj;
+                }
+            }
+        }
+
+        // Special handling for clock timezones
+        if (type === "clock") {
+            const tzItems = form.querySelectorAll(".timezone-item");
+            const timezones = [];
+            tzItems.forEach(item => {
+                const idInput = item.querySelector("[name='timezone_id']");
+                const labelInput = item.querySelector("[name='timezone_label']");
+                if (idInput && idInput.value.trim()) {
+                    const tz = { timezone: idInput.value.trim() };
+                    if (labelInput && labelInput.value.trim()) {
+                        tz.label = labelInput.value.trim();
+                    }
+                    timezones.push(tz);
+                }
+            });
+            if (timezones.length > 0) {
+                properties["timezones"] = timezones;
+            }
+        }
+
         if (type === "monitor") {
             const sites = [];
             const siteTitles = formData.getAll("site_title");
@@ -1506,10 +2153,15 @@ function setupAddWidgetModal() {
                     });
                 }
             }
-            properties["groups"] = [{
+            const groupObj = {
                 title: formData.get("group_title") ? formData.get("group_title").trim() : "Links",
                 links: links
-            }];
+            };
+            const groupColor = formData.get("group_color");
+            if (groupColor && groupColor.trim()) {
+                groupObj.color = groupColor.trim();
+            }
+            properties["groups"] = [groupObj];
         }
         if (type === "calendar") {
             properties["calendars"] = Array.from(formData.getAll("google_calendar_id")).filter(Boolean);
@@ -1529,7 +2181,15 @@ function setupAddWidgetModal() {
         if (response.ok) {
             hideModal();
             showToast("Widget added successfully", "success");
+            allowEditModeRefresh = true;
             await refreshPageContentsLive();
+            if (document.body.classList.contains("layout-edit-mode")) {
+                enableWidgetsDraggability(false);
+                enableWidgetsDraggability(true);
+                layoutHistory = [document.getElementById("page").innerHTML];
+                historyIndex = 0;
+                snapshotCurrentEditPage();
+            }
         } else {
             const err = await response.text();
             showToast("Failed to add widget: " + err, "error");
@@ -1541,6 +2201,7 @@ function setupHeaderControls() {
     const editHandler = () => toggleEditMode(true);
     const cancelHandler = async () => {
         toggleEditMode(false);
+        allowEditModeRefresh = true;
         await refreshPageContentsLive();
     };
     const saveHandler = saveLayout;
@@ -2185,6 +2846,102 @@ function setupClocks() {
     }
 }
 
+// Traverses all widget containers on the page and dynamically sets data attributes (coordinates)
+// so that the frontend can uniquely target and refresh individual widgets.
+function assignDomCoordinates() {
+    // 1. Head widgets
+    const headZone = document.querySelector(".page-head-widgets");
+    if (headZone) {
+        const headWidgets = Array.from(headZone.children).filter(el => el.classList.contains("widget"));
+        headWidgets.forEach((w, wIdx) => {
+            w.setAttribute("data-col", "head");
+            w.setAttribute("data-idx", wIdx);
+            w.setAttribute("data-nested-idx", "-1");
+            
+            // Check for nested group widgets
+            if (w.classList.contains("widget-type-group")) {
+                const nested = w.querySelectorAll(".widget-group > .widget");
+                nested.forEach((nw, nwIdx) => {
+                    nw.setAttribute("data-col", "head");
+                    nw.setAttribute("data-idx", wIdx);
+                    nw.setAttribute("data-nested-idx", nwIdx);
+                });
+            }
+        });
+    }
+
+    // 2. Column widgets
+    const columns = document.querySelectorAll(".page-column");
+    columns.forEach((col, colIdx) => {
+        const colWidgets = Array.from(col.children).filter(el => el.classList.contains("widget"));
+        colWidgets.forEach((w, wIdx) => {
+            w.setAttribute("data-col", colIdx);
+            w.setAttribute("data-idx", wIdx);
+            w.setAttribute("data-nested-idx", "-1");
+            
+            // Check for nested group widgets
+            if (w.classList.contains("widget-type-group")) {
+                const nested = w.querySelectorAll(".widget-group > .widget");
+                nested.forEach((nw, nwIdx) => {
+                    nw.setAttribute("data-col", colIdx);
+                    nw.setAttribute("data-idx", wIdx);
+                    nw.setAttribute("data-nested-idx", nwIdx);
+                });
+            }
+        });
+    });
+}
+
+// Fetches the newly rendered HTML for a specific widget and replaces it in the DOM in-place.
+async function refreshWidget(col, idx, nestedIdx) {
+    let selector = `.widget[data-col="${col}"][data-idx="${idx}"]`;
+    if (nestedIdx !== undefined && nestedIdx >= 0) {
+        selector = `.widget[data-col="${col}"][data-idx="${idx}"] .widget[data-nested-idx="${nestedIdx}"]`;
+    }
+    const widgetEl = document.querySelector(selector);
+    if (!widgetEl) {
+        console.warn(`[Refresh] Widget not found in DOM for selector: ${selector}`);
+        return;
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            page: pageData.slug,
+            column: col,
+            widget: idx
+        });
+        if (nestedIdx !== undefined && nestedIdx >= 0) {
+            queryParams.append("nested", nestedIdx);
+        }
+
+        const response = await fetch(`/api/widgets/render?${queryParams.toString()}`);
+        if (!response.ok) {
+            throw new Error(`Failed to render widget: ${response.status}`);
+        }
+
+        const newHtml = await response.text();
+        
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = newHtml.trim();
+        const newWidgetEl = tempDiv.firstChild;
+        
+        if (newWidgetEl) {
+            widgetEl.replaceWith(newWidgetEl);
+            
+            // Re-assign coordinate data attributes to the new element
+            assignDomCoordinates();
+
+            // Re-run setup functions to initialize script features on the new elements
+            setupLazyImages();
+            setupCarousels();
+            setupDynamicRelativeTime();
+            setupClocks();
+        }
+    } catch (e) {
+        console.error(`[Refresh] Failed to refresh widget ${col}:${idx}:${nestedIdx}:`, e);
+    }
+}
+
 // Re-fetches the page contents dynamically from the server and updates the DOM, re-binding all scripts and listeners.
 async function refreshPageContentsLive() {
     const pageElement = document.getElementById("page");
@@ -2198,11 +2955,16 @@ async function refreshPageContentsLive() {
     }
 
     const wasEditMode = document.body.classList.contains("layout-edit-mode");
+    if (wasEditMode && !allowEditModeRefresh && historyIndex > 0) {
+        return;
+    }
+    allowEditModeRefresh = false;
     ignoreReloadPageUntil = Date.now() + RELOAD_PAGE_IGNORE_DURATION_MS;
     
     try {
         const pageContents = await fetchPageContents(pageData.slug);
         pageElement.innerHTML = pageContents;
+        assignDomCoordinates();
         
         // Match elements and highlight any changes with a flash transition
         pageElement.querySelectorAll('.nw-stat-value, .nw-today-value, .nw-gauge-value, .nw-hero-value').forEach((el, index) => {
@@ -2386,6 +3148,30 @@ function addBookmarkLinkInput(container, title, url) {
  * Initializes list field values dynamically in the edit or add form.
  * Wires the "Add Item" button listener.
  */
+function addTimezoneInput(container, timezone, label) {
+    timezone = timezone || "";
+    label = label || "";
+    const div = document.createElement("div");
+    div.className = "timezone-item";
+    div.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px; align-items: center;";
+    div.innerHTML = `
+        <input type="text" name="timezone_id" placeholder="Timezone (e.g. Europe/Paris)" required value="${timezone}" style="flex: 1; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <input type="text" name="timezone_label" placeholder="Label (e.g. Paris)" value="${label}" style="width: 120px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <button type="button" class="btn-remove-dynamic-item" style="background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 0 10px; height: 34px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s ease; font-weight: bold;">×</button>
+    `;
+    container.appendChild(div);
+    const btn = div.querySelector(".btn-remove-dynamic-item");
+    btn.addEventListener("click", () => div.remove());
+    btn.addEventListener("mouseover", () => {
+        btn.style.backgroundColor = "var(--color-negative)";
+        btn.style.color = "#ffffff";
+    });
+    btn.addEventListener("mouseout", () => {
+        btn.style.backgroundColor = "transparent";
+        btn.style.color = "var(--color-negative)";
+    });
+}
+
 function initDynamicFields(container, type, widget) {
     if (type === "rss") {
         const itemsDiv = container.querySelector(".rss-items");
@@ -2394,11 +3180,25 @@ function initDynamicFields(container, type, widget) {
 
         let feeds = [];
         if (widget && widget.feeds) {
-            feeds = widget.feeds.map(f => (typeof f === "object" && f !== null) ? { url: f.url || "", title: f.title || "" } : { url: f || "", title: "" });
+            feeds = widget.feeds.map(f => {
+                if (typeof f === "object" && f !== null) {
+                    return {
+                        url: f.url || "",
+                        title: f.title || "",
+                        hideCategories: f["hide-categories"] || false,
+                        hideDescription: f["hide-description"] || false,
+                        limit: f.limit,
+                        itemLinkPrefix: f["item-link-prefix"] || "",
+                        headers: f.headers || {}
+                    };
+                } else {
+                    return { url: f || "", title: "" };
+                }
+            });
         }
 
         itemsDiv.innerHTML = "";
-        feeds.forEach(val => addRSSFeedInput(itemsDiv, val.url, val.title));
+        feeds.forEach(val => addRSSFeedInput(itemsDiv, val.url, val.title, val.hideCategories, val.hideDescription, val.limit, val.itemLinkPrefix, val.headers));
         if (feeds.length === 0) addRSSFeedInput(itemsDiv, "", "");
 
         btnAdd.addEventListener("click", () => addRSSFeedInput(itemsDiv, "", ""));
@@ -2422,14 +3222,22 @@ function initDynamicFields(container, type, widget) {
     else if (type === "videos") {
         const itemsDiv = container.querySelector(".videos-items");
         const btnAdd = container.querySelector("#btn-add-videos-channel");
-        if (!itemsDiv || !btnAdd) return;
-
-        const channels = (widget && widget.channels) || [];
-        itemsDiv.innerHTML = "";
-        channels.forEach(val => addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", val));
-        if (channels.length === 0) addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", "");
-
-        btnAdd.addEventListener("click", () => addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", ""));
+        if (itemsDiv && btnAdd) {
+            const channels = (widget && widget.channels) || [];
+            itemsDiv.innerHTML = "";
+            channels.forEach(val => addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", val));
+            if (channels.length === 0) addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", "");
+            btnAdd.addEventListener("click", () => addSingleStringInput(itemsDiv, "videos_channel", "e.g. UCsBjURrPoezykLs9EqgamOA", ""));
+        }
+        const playlistDiv = container.querySelector(".videos-playlist-items");
+        const btnAddPlaylist = container.querySelector("#btn-add-videos-playlist");
+        if (playlistDiv && btnAddPlaylist) {
+            const playlists = (widget && widget.playlists) || [];
+            playlistDiv.innerHTML = "";
+            playlists.forEach(val => addSingleStringInput(playlistDiv, "videos_playlist", "e.g. PL8mG-RkN2uTyZZ00ObwZxxoG_nJbs3qec", val));
+            if (playlists.length === 0) addSingleStringInput(playlistDiv, "videos_playlist", "e.g. PL8mG-RkN2uTyZZ00ObwZxxoG_nJbs3qec", "");
+            btnAddPlaylist.addEventListener("click", () => addSingleStringInput(playlistDiv, "videos_playlist", "e.g. PL8mG-RkN2uTyZZ00ObwZxxoG_nJbs3qec", ""));
+        }
     }
     else if (type === "twitch-channels") {
         const itemsDiv = container.querySelector(".twitch-items");
@@ -2482,15 +3290,35 @@ function initDynamicFields(container, type, widget) {
     else if (type === "bookmarks") {
         const itemsDiv = container.querySelector(".bookmark-links");
         const btnAdd = container.querySelector("#btn-add-bookmark-link");
+        if (itemsDiv && btnAdd) {
+            const groups = (widget && widget.groups) || [];
+            const links = (groups.length > 0 && groups[0].links) || [];
+            itemsDiv.innerHTML = "";
+            links.forEach(link => addBookmarkLinkInput(itemsDiv, link.title || "", link.url || ""));
+            if (links.length === 0) addBookmarkLinkInput(itemsDiv, "", "");
+            btnAdd.addEventListener("click", () => addBookmarkLinkInput(itemsDiv, "", ""));
+        }
+        if (widget && widget.groups && widget.groups.length > 0) {
+            const colorInput = container.querySelector('[name="group_color"]');
+            if (colorInput && widget.groups[0].color) {
+                colorInput.value = widget.groups[0].color;
+            }
+        }
+    }
+    else if (type === "clock") {
+        const itemsDiv = container.querySelector(".timezone-items");
+        const btnAdd = container.querySelector("#btn-add-timezone");
         if (!itemsDiv || !btnAdd) return;
 
-        const groups = (widget && widget.groups) || [];
-        const links = (groups.length > 0 && groups[0].links) || [];
+        const timezones = (widget && widget.timezones) || [];
         itemsDiv.innerHTML = "";
-        links.forEach(link => addBookmarkLinkInput(itemsDiv, link.title || "", link.url || ""));
-        if (links.length === 0) addBookmarkLinkInput(itemsDiv, "", "");
-
-        btnAdd.addEventListener("click", () => addBookmarkLinkInput(itemsDiv, "", ""));
+        timezones.forEach(tz => {
+            const id = typeof tz === "object" ? (tz.timezone || "") : tz;
+            const label = typeof tz === "object" ? (tz.label || "") : "";
+            addTimezoneInput(itemsDiv, id, label);
+        });
+        if (timezones.length === 0) addTimezoneInput(itemsDiv, "", "");
+        btnAdd.addEventListener("click", () => addTimezoneInput(itemsDiv, "", ""));
     }
 }
 
@@ -2555,18 +3383,82 @@ async function initGoogleCalendarFields(container, widget) {
 }
 
 /**
- * Appends a single RSS URL and Title input.
+ * Appends a single RSS Feed input card with URL, Title, and collapsible Advanced settings.
  */
-function addRSSFeedInput(container, url, title) {
+function addRSSFeedInput(container, url, title, hideCategories, hideDescription, limit, itemLinkPrefix, headers) {
+    url = url || "";
+    title = title || "";
+    hideCategories = hideCategories === true;
+    hideDescription = hideDescription === true;
+    limit = (limit !== undefined && limit !== null) ? limit : "";
+    itemLinkPrefix = itemLinkPrefix || "";
+    
+    let headersStr = "";
+    if (headers && typeof headers === "object") {
+        headersStr = Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join("\n");
+    }
+
     const div = document.createElement("div");
     div.className = "rss-item";
-    div.style.cssText = "display: flex; gap: 8px; margin-bottom: 8px; align-items: center;";
+    div.style.cssText = "display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; border: 1px solid var(--color-widget-content-border); padding: 12px; border-radius: 6px; background: rgba(255, 255, 255, 0.02);";
+    
     div.innerHTML = `
-        <input type="url" name="rss_url" placeholder="Feed URL (e.g. https://selfh.st/rss/)" required value="${url}" style="flex: 1; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-        <input type="text" name="rss_title" placeholder="Title Override" value="${title}" style="width: 130px; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
-        <button type="button" class="btn-remove-dynamic-item" style="background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 0 10px; height: 34px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s ease; font-weight: bold;">×</button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="url" name="rss_url" placeholder="Feed URL (e.g. https://selfh.st/rss/)" required value="${url}" style="flex: 1; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            <button type="button" class="btn-remove-dynamic-item" style="background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 0 10px; height: 34px; font-size: 1.2rem; cursor: pointer; transition: all 0.2s ease; font-weight: bold;">×</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" class="btn-feed-advanced-toggle" style="background: none; border: none; color: var(--color-primary); cursor: pointer; font-size: 0.85em; padding: 0; display: flex; align-items: center; gap: 4px; font-family: inherit;">
+                Advanced Settings <span class="arrow-indicator">▶</span>
+            </button>
+        </div>
+        <div class="feed-advanced-panel" style="display: none; flex-direction: column; gap: 10px; border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 5px;">
+            <div style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label style="display: block; margin-bottom: 4px; font-size: 0.8em; opacity: 0.85;">Title Override</label>
+                    <input type="text" name="rss_title" placeholder="Feed Title Override" value="${title}" style="width: 100%; padding: 6px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+                <div style="width: 80px;">
+                    <label style="display: block; margin-bottom: 4px; font-size: 0.8em; opacity: 0.85;">Feed Limit</label>
+                    <input type="number" name="rss_limit" placeholder="No limit" value="${limit}" style="width: 100%; padding: 6px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                </div>
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 4px; font-size: 0.8em; opacity: 0.85;">Link Prefix Override</label>
+                <input type="text" name="rss_item_link_prefix" placeholder="e.g. https://domain.com" value="${itemLinkPrefix}" style="width: 100%; padding: 6px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 4px; font-size: 0.8em; opacity: 0.85;">Custom Headers (Key: Value per line)</label>
+                <textarea name="rss_headers" placeholder="User-Agent: Custom Agent" style="width: 100%; height: 50px; padding: 6px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; resize: vertical; outline: none; font-size: 0.85em;">${headersStr}</textarea>
+            </div>
+            <div style="display: flex; gap: 15px; margin-top: 2px;">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8em; opacity: 0.85; cursor: pointer; user-select: none;">
+                    <input type="checkbox" name="rss_hide_categories" ${hideCategories ? "checked" : ""} style="cursor: pointer;" />
+                    Hide Categories
+                </label>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8em; opacity: 0.85; cursor: pointer; user-select: none;">
+                    <input type="checkbox" name="rss_hide_description" ${hideDescription ? "checked" : ""} style="cursor: pointer;" />
+                    Hide Description
+                </label>
+            </div>
+        </div>
     `;
     container.appendChild(div);
+
+    // Toggle advanced settings panel visibility
+    const advancedToggle = div.querySelector(".btn-feed-advanced-toggle");
+    const advancedPanel = div.querySelector(".feed-advanced-panel");
+    const arrowIndicator = div.querySelector(".arrow-indicator");
+    advancedToggle.addEventListener("click", () => {
+        if (advancedPanel.style.display === "none") {
+            advancedPanel.style.display = "flex";
+            arrowIndicator.textContent = "▼";
+        } else {
+            advancedPanel.style.display = "none";
+            arrowIndicator.textContent = "▶";
+        }
+    });
+
     const btn = div.querySelector(".btn-remove-dynamic-item");
     btn.addEventListener("click", () => div.remove());
     btn.addEventListener("mouseover", () => {
@@ -2610,6 +3502,29 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
 
         fieldsContainer.innerHTML = widgetFieldTemplates[type] || `<p style="font-size:0.85em; opacity:0.6; text-align:center;">This widget type does not require any properties.</p>`;
 
+        if (defaultCacheDurations[type]) {
+            const cacheWrapper = document.createElement("div");
+            cacheWrapper.style.cssText = "margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--color-separator);";
+            cacheWrapper.innerHTML = `
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Update Interval</label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
+                        <input type="number" name="cache-hours" min="0" max="24" value="0" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                        <span style="font-size: 0.9em; opacity: 0.7;">h</span>
+                    </div>
+                    <div style="flex: 1; display: flex; align-items: center; gap: 5px;">
+                        <input type="number" name="cache-minutes" min="0" max="59" value="15" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+                        <span style="font-size: 0.9em; opacity: 0.7;">m</span>
+                    </div>
+                </div>
+            `;
+            fieldsContainer.insertBefore(cacheWrapper, fieldsContainer.firstChild);
+            
+            const durationObj = parseDurationToHoursMinutes(widget.cache || defaultCacheDurations[type]);
+            cacheWrapper.querySelector('[name="cache-hours"]').value = durationObj.hours;
+            cacheWrapper.querySelector('[name="cache-minutes"]').value = durationObj.minutes;
+        }
+
         const hideTitleWrapper = document.createElement("div");
         hideTitleWrapper.style.cssText = "margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px dashed var(--color-separator);";
         hideTitleWrapper.innerHTML = `
@@ -2641,13 +3556,17 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
 
 function prefillWidgetFields(container, type, widget) {
     for (const key in widget) {
-        if (key === "type" || key === "sites" || key === "groups" || key === "feeds" || key === "symbols" || key === "markets" || key === "stocks" || key === "channels" || key === "repositories" || key === "exclude") continue;
+        if (key === "type" || key === "sites" || key === "groups" || key === "feeds" || key === "symbols" || key === "markets" || key === "stocks" || key === "channels" || key === "repositories" || key === "exclude" || key === "timezones" || key === "playlists") continue;
         const val = widget[key];
 
         const inputs = container.querySelectorAll(`[name="${key}"]`);
         inputs.forEach(input => {
             if (typeof val === "object" && val !== null) {
-                // Skiped or custom handled
+                if (key === "headers" && input.tagName === "TEXTAREA") {
+                    input.value = Object.entries(val).map(([k, v]) => `${k}: ${v}`).join("\n");
+                }
+            } else if (input.type === "checkbox") {
+                input.checked = val === true || val === "true" || val === "on" || val === 1;
             } else {
                 input.value = val;
             }
@@ -2683,39 +3602,144 @@ function setupEditWidgetModal() {
         const properties = {};
 
         formData.forEach((value, key) => {
-            if (key === "hide-title") return;
+            if (key === "hide-title" || key === "cache-hours" || key === "cache-minutes") return;
             if (key === "feeds" || key === "symbols" || key === "channels" || key === "repositories" || key === "exclude") {
                 // Obsolete comma-separated keys; skipped to avoid noise
-            } else if (key === "height" || key === "limit" || key === "collapse-after" || key === "update-interval" || key === "pull-requests-limit" || key === "issues-limit" || key === "viewport-limit" || key === "max-days-ahead") {
+            } else if (key === "height" || key === "limit" || key === "collapse-after" || key === "update-interval" || key === "pull-requests-limit" || key === "issues-limit" || key === "viewport-limit" || key === "max-days-ahead" || key === "commits-limit" || key === "collapse-after-rows") {
                 properties[key] = parseInt(value, 10);
+            } else if (key === "thumbnail-height" || key === "card-height") {
+                properties[key] = parseFloat(value);
             } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
                 // Handled separately below
-            } else if (key === "rss_url" || key === "rss_title" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id") {
+            } else if (key === "rss_url" || key === "rss_title" || key === "rss_hide_categories" || key === "rss_hide_description" || key === "rss_limit" || key === "rss_item_link_prefix" || key === "rss_headers" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "videos_playlist" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id" || key === "timezone_id" || key === "timezone_label" || key === "monitor_site_check_url" || key === "monitor_site_icon" || key === "monitor_site_timeout" || key === "monitor_site_alt_status") {
                 // Handled separately below
             } else {
                 properties[key] = value;
             }
         });
 
+        let hours = parseInt(formData.get("cache-hours") || "0", 10);
+        let minutes = parseInt(formData.get("cache-minutes") || "0", 10);
+        hours = Math.max(0, Math.min(24, hours));
+        minutes = Math.max(0, Math.min(59, minutes));
+        if (hours === 0 && minutes === 0) {
+            minutes = 1;
+        }
+        if (defaultCacheDurations[type]) {
+            properties["cache"] = `${hours * 60 + minutes}m`;
+        }
+
         const hideTitleInput = form.elements["hide-title"];
         if (hideTitleInput) {
             properties["hide-title"] = hideTitleInput.checked;
         }
 
+        const preserveOrderInput = form.elements["preserve-order"];
+        if (preserveOrderInput) {
+            properties["preserve-order"] = preserveOrderInput.checked;
+        }
+
+        const singleLineTitlesInput = form.elements["single-line-titles"];
+        if (singleLineTitlesInput) {
+            properties["single-line-titles"] = singleLineTitlesInput.checked;
+        }
+
+        const showThumbnailsInput = form.elements["show-thumbnails"];
+        if (showThumbnailsInput) {
+            properties["show-thumbnails"] = showThumbnailsInput.checked;
+        }
+        const showFlairsInput = form.elements["show-flairs"];
+        if (showFlairsInput) {
+            properties["show-flairs"] = showFlairsInput.checked;
+        }
+        const includeShortsInput = form.elements["include-shorts"];
+        if (includeShortsInput) {
+            properties["include-shorts"] = includeShortsInput.checked;
+        }
+        const showSourceIconInput = form.elements["show-source-icon"];
+        if (showSourceIconInput) {
+            properties["show-source-icon"] = showSourceIconInput.checked;
+        }
+        const showFailingOnlyInput = form.elements["show-failing-only"];
+        if (showFailingOnlyInput) {
+            properties["show-failing-only"] = showFailingOnlyInput.checked;
+        }
+        const hideLocationInput = form.elements["hide-location"];
+        if (hideLocationInput) {
+            properties["hide-location"] = hideLocationInput.checked;
+        }
+        const showAreaNameInput = form.elements["show-area-name"];
+        if (showAreaNameInput) {
+            properties["show-area-name"] = showAreaNameInput.checked;
+        }
+        const framelessInput = form.elements["frameless"];
+        if (framelessInput) {
+            properties["frameless"] = framelessInput.checked;
+        }
+        const allowInsecureInput = form.elements["allow-insecure"];
+        if (allowInsecureInput) {
+            properties["allow-insecure"] = allowInsecureInput.checked;
+        }
+        const skipJsonValidationInput = form.elements["skip-json-validation"];
+        if (skipJsonValidationInput) {
+            properties["skip-json-validation"] = skipJsonValidationInput.checked;
+        }
+        const hideSwapInput = form.elements["hide-swap"];
+        if (hideSwapInput) {
+            properties["hide-swap"] = hideSwapInput.checked;
+        }
+
         // Dynamic lists collector for editing a widget
         if (type === "rss") {
             const list = [];
-            const urls = formData.getAll("rss_url");
-            const titles = formData.getAll("rss_title");
-            for (let i = 0; i < urls.length; i++) {
-                if (urls[i].trim()) {
-                    const obj = { url: urls[i].trim() };
-                    if (titles[i] && titles[i].trim()) {
-                        obj.title = titles[i].trim();
+            const items = form.querySelectorAll(".rss-item");
+            items.forEach(item => {
+                const urlInput = item.querySelector("[name='rss_url']");
+                const url = urlInput ? urlInput.value.trim() : "";
+                if (url) {
+                    const titleInput = item.querySelector("[name='rss_title']");
+                    const hideCategoriesCb = item.querySelector("[name='rss_hide_categories']");
+                    const hideDescriptionCb = item.querySelector("[name='rss_hide_description']");
+                    const limitInput = item.querySelector("[name='rss_limit']");
+                    const itemLinkPrefixInput = item.querySelector("[name='rss_item_link_prefix']");
+                    const headersTextarea = item.querySelector("[name='rss_headers']");
+                    
+                    const obj = { url: url };
+                    if (titleInput && titleInput.value.trim()) {
+                        obj.title = titleInput.value.trim();
+                    }
+                    if (hideCategoriesCb && hideCategoriesCb.checked) {
+                        obj["hide-categories"] = true;
+                    }
+                    if (hideDescriptionCb && hideDescriptionCb.checked) {
+                        obj["hide-description"] = true;
+                    }
+                    if (limitInput && limitInput.value.trim()) {
+                        obj.limit = parseInt(limitInput.value.trim(), 10);
+                    }
+                    if (itemLinkPrefixInput && itemLinkPrefixInput.value.trim()) {
+                        obj["item-link-prefix"] = itemLinkPrefixInput.value.trim();
+                    }
+                    if (headersTextarea && headersTextarea.value.trim()) {
+                        const headersObj = {};
+                        const lines = headersTextarea.value.trim().split("\n");
+                        lines.forEach(line => {
+                            const colonIdx = line.indexOf(":");
+                            if (colonIdx !== -1) {
+                                const k = line.substring(0, colonIdx).trim();
+                                const v = line.substring(colonIdx + 1).trim();
+                                if (k && v) {
+                                    headersObj[k] = v;
+                                }
+                            }
+                        });
+                        if (Object.keys(headersObj).length > 0) {
+                            obj.headers = headersObj;
+                        }
                     }
                     list.push(obj);
                 }
-            }
+            });
             properties["feeds"] = list;
         }
         if (type === "stocks" || type === "markets") {
@@ -2738,6 +3762,7 @@ function setupEditWidgetModal() {
         }
         if (type === "videos") {
             properties["channels"] = formData.getAll("videos_channel").map(s => s.trim()).filter(Boolean);
+            properties["playlists"] = formData.getAll("videos_playlist").map(s => s.trim()).filter(Boolean);
         }
         if (type === "twitch-channels") {
             properties["channels"] = formData.getAll("twitch_channel").map(s => s.trim()).filter(Boolean);
@@ -2747,6 +3772,46 @@ function setupEditWidgetModal() {
         }
         if (type === "twitch-top-games") {
             properties["exclude"] = formData.getAll("twitch_exclude").map(s => s.trim()).filter(Boolean);
+        }
+
+        if (type === "custom-api") {
+            const headersTextarea = form.querySelector("[name='headers']");
+            if (headersTextarea && headersTextarea.value.trim()) {
+                const headersObj = {};
+                const lines = headersTextarea.value.trim().split("\n");
+                lines.forEach(line => {
+                    const colonIdx = line.indexOf(":");
+                    if (colonIdx !== -1) {
+                        const k = line.substring(0, colonIdx).trim();
+                        const v = line.substring(colonIdx + 1).trim();
+                        if (k && v) {
+                            headersObj[k] = v;
+                        }
+                    }
+                });
+                if (Object.keys(headersObj).length > 0) {
+                    properties["headers"] = headersObj;
+                }
+            }
+        }
+
+        if (type === "clock") {
+            const tzItems = form.querySelectorAll(".timezone-item");
+            const timezones = [];
+            tzItems.forEach(item => {
+                const idInput = item.querySelector("[name='timezone_id']");
+                const labelInput = item.querySelector("[name='timezone_label']");
+                if (idInput && idInput.value.trim()) {
+                    const tz = { timezone: idInput.value.trim() };
+                    if (labelInput && labelInput.value.trim()) {
+                        tz.label = labelInput.value.trim();
+                    }
+                    timezones.push(tz);
+                }
+            });
+            if (timezones.length > 0) {
+                properties["timezones"] = timezones;
+            }
         }
 
         if (type === "monitor") {
@@ -2776,10 +3841,15 @@ function setupEditWidgetModal() {
                     });
                 }
             }
-            properties["groups"] = [{
+            const groupObj = {
                 title: formData.get("group_title") ? formData.get("group_title").trim() : "Links",
                 links: links
-            }];
+            };
+            const groupColor = formData.get("group_color");
+            if (groupColor && groupColor.trim()) {
+                groupObj.color = groupColor.trim();
+            }
+            properties["groups"] = [groupObj];
         }
         if (type === "calendar") {
             properties["calendars"] = Array.from(formData.getAll("google_calendar_id")).filter(Boolean);
@@ -2801,7 +3871,15 @@ function setupEditWidgetModal() {
         if (response.ok) {
             hideModal();
             showToast("Widget updated successfully", "success");
+            allowEditModeRefresh = true;
             await refreshPageContentsLive();
+            if (document.body.classList.contains("layout-edit-mode")) {
+                enableWidgetsDraggability(false);
+                enableWidgetsDraggability(true);
+                layoutHistory = [document.getElementById("page").innerHTML];
+                historyIndex = 0;
+                snapshotCurrentEditPage();
+            }
         } else {
             const err = await response.text();
             showToast("Failed to update widget: " + err, "error");
@@ -2819,6 +3897,7 @@ async function setupPage() {
     try {
         const pageContents = await fetchPageContents(pageData.slug);
         pageElement.innerHTML = pageContents;
+        assignDomCoordinates();
     } catch (e) {
         console.error("[Init] Failed to load page:", e);
         pageElement.innerHTML = '<div style="text-align:center; padding:40px; opacity:0.6;">Failed to load page content. Please refresh.</div>';
@@ -2863,6 +3942,145 @@ if (document.readyState === "loading") {
 // Pointer Events-based Drag and Drop (works on touch + mouse)
 // ----------------------------------------------------
 
+function resetHoverTab() {
+    if (hoverTabTimer) {
+        clearTimeout(hoverTabTimer);
+        hoverTabTimer = null;
+    }
+    hoveredTabSlug = null;
+    document.querySelectorAll(".nav .nav-item").forEach(el => el.classList.remove("tab-drag-hover"));
+}
+
+async function switchPageDynamically(targetSlug, isDragging = false) {
+    resetHoverTab();
+    if (isDragging && !draggedWidget) return;
+
+    const isInEditMode = document.body.classList.contains("layout-edit-mode");
+
+    try {
+        // When dragging to another tab, remove widget + placeholder from source page
+        // BEFORE snapshotting so the source page's cache doesn't contain a ghost widget
+        if (isDragging) {
+            if (placeholder && placeholder.parentNode) {
+                placeholder.parentNode.removeChild(placeholder);
+            }
+            if (draggedWidget && draggedWidget.parentNode) {
+                draggedWidget.parentNode.removeChild(draggedWidget);
+            }
+            draggedWidget.classList.remove("dragging");
+        }
+
+        // Snapshot current page state before switching (edit mode only)
+        if (isInEditMode) {
+            snapshotCurrentEditPage();
+        }
+
+        // Re-add dragging class for the target page
+        if (isDragging && draggedWidget) {
+            draggedWidget.classList.add("dragging");
+            placeholder = document.createElement("div");
+            placeholder.className = "widget-placeholder";
+        }
+
+        // Switch page slug
+        pageData.slug = targetSlug;
+
+        // Notify backend WebSocket of the new active page slug
+        if (activeWS && activeWS.readyState === WebSocket.OPEN) {
+            activeWS.send(JSON.stringify({ type: "active_page", page: targetSlug }));
+        }
+
+        // Update active tab styling in desktop header
+        document.querySelectorAll(".nav .nav-item").forEach(item => {
+            item.classList.remove("nav-item-current");
+            const href = item.getAttribute("href");
+            if (href && href.replace(/^\//, "") === targetSlug) {
+                item.classList.add("nav-item-current");
+            }
+        });
+
+        // Set the new HTML content — use cached state if available in edit mode
+        const pageElement = document.getElementById("page");
+        if (isInEditMode && editPageStates.has(targetSlug)) {
+            restoreEditPageState(targetSlug);
+        } else {
+            const newContent = await fetchPageContents(targetSlug);
+            pageElement.innerHTML = newContent;
+            if (isInEditMode) {
+                currentEditPageSlug = targetSlug;
+                layoutHistory = [pageElement.innerHTML];
+                historyIndex = 0;
+                editPageStates.set(targetSlug, {
+                    html: pageElement.innerHTML,
+                    layoutHistory: layoutHistory.slice(),
+                    historyIndex: 0,
+                    spacingModified: false,
+                    originalSpacing: null
+                });
+            }
+        }
+
+        // Reassign column layout indexing for the new page
+        assignDomCoordinates();
+
+        if (isDragging) {
+            // Place the placeholder and dragged widget in the first column of the new page
+            const firstCol = pageElement.querySelector(".page-column");
+            if (firstCol) {
+                firstCol.appendChild(placeholder);
+                placeholder.appendChild(draggedWidget);
+            }
+        }
+
+        // Update URL dynamically
+        window.history.pushState(null, "", "/" + targetSlug);
+
+        // If in Edit Mode, enable widgets draggability on the new elements and update select layout
+        if (isInEditMode) {
+            const selectLayout = document.getElementById("select-page-layout");
+            if (selectLayout) {
+                const columns = document.querySelectorAll(".page-column");
+                const sizes = [];
+                columns.forEach(col => {
+                    if (col.classList.contains("page-column-full")) {
+                        sizes.push("full");
+                    } else if (col.classList.contains("page-column-small")) {
+                        sizes.push("small");
+                    }
+                });
+                const layoutKey = sizes.join(",");
+                selectLayout.value = layoutKey || "full";
+            }
+            enableWidgetsDraggability(true);
+            updateUndoButtonState();
+        }
+
+        // Re-initialize dynamic styles/widgets for the new page layout
+        setTimeout(setupLazyImages, 5);
+        setupCarousels();
+        setupDynamicRelativeTime();
+        setupClocks();
+    } catch (e) {
+        console.error("Failed to switch page dynamically:", e);
+        showToast("Error switching dashboard: " + e.message, "error");
+    }
+}
+
+// Intercept nav clicks in edit mode to switch pages dynamically and stay in edit mode
+document.addEventListener("click", async function (e) {
+    const tabLink = e.target.closest(".nav .nav-item");
+    if (tabLink && tabLink.tagName === "A" && document.body.classList.contains("layout-edit-mode")) {
+        const href = tabLink.getAttribute("href");
+        if (href && !href.startsWith("http") && !href.startsWith("//") && !href.includes("://")) {
+            const targetSlug = href.replace(/^\//, "");
+            if (targetSlug && targetSlug !== "api/settings" && targetSlug !== pageData.slug) {
+                e.preventDefault();
+                await switchPageDynamically(targetSlug, false);
+            }
+        }
+    }
+});
+
 function startPointerDrag(e, widget) {
     if (!document.body.classList.contains("layout-edit-mode")) return;
     if (draggedWidget) return;
@@ -2870,6 +4088,12 @@ function startPointerDrag(e, widget) {
 
     dragPointerId = e.pointerId;
     draggedWidget = widget;
+    
+    // Set the original page slug when we start dragging
+    if (!widget.dataset.originalPage) {
+        widget.dataset.originalPage = pageData.slug;
+    }
+    
     document.body.classList.add("is-dragging");
 
     const ghost = widget.cloneNode(true);
@@ -2885,6 +4109,7 @@ function startPointerDrag(e, widget) {
     ghost.style.left = (e.clientX - dragOffsetX) + "px";
     ghost.style.top = (e.clientY - dragOffsetY) + "px";
 
+    dragAfterCache.clear();
     widget.classList.add("dragging");
 
     placeholder = document.createElement("div");
@@ -2893,6 +4118,7 @@ function startPointerDrag(e, widget) {
 }
 
 function cancelPointerDrag() {
+    resetHoverTab();
     if (!draggedWidget) return;
     document.body.classList.remove("is-dragging");
     document.querySelectorAll(".page-column.drop-active, .page-column-head.drop-active, .widget-group.drop-active").forEach(function(el) { el.classList.remove("drop-active"); });
@@ -2905,6 +4131,7 @@ function cancelPointerDrag() {
     draggedWidget = null;
     placeholder = null;
     dragPointerId = -1;
+    dragAfterCache.clear();
 }
 
 document.addEventListener("pointermove", function(e) {
@@ -2929,6 +4156,32 @@ document.addEventListener("pointermove", function(e) {
 
     if (!elementUnder) return;
 
+    // --- Tab Switching Logic ---
+    const tabLink = elementUnder.closest(".nav .nav-item"); // Must be in the header nav
+    // Clear any previous tab hover style
+    document.querySelectorAll(".nav .nav-item").forEach(el => el.classList.remove("tab-drag-hover"));
+
+    if (tabLink && tabLink.tagName === "A" && !tabLink.classList.contains("nav-item-current")) {
+        const href = tabLink.getAttribute("href");
+        const targetSlug = href ? href.replace(/^\//, "") : "";
+        
+        if (targetSlug && targetSlug !== pageData.slug && targetSlug !== "api/settings") {
+            tabLink.classList.add("tab-drag-hover");
+            if (hoveredTabSlug !== targetSlug) {
+                if (hoverTabTimer) clearTimeout(hoverTabTimer);
+                hoveredTabSlug = targetSlug;
+                hoverTabTimer = setTimeout(async () => {
+                    await switchPageDynamically(targetSlug, true);
+                }, 600); // 600ms hover duration
+            }
+        } else {
+            resetHoverTab();
+        }
+    } else {
+        resetHoverTab();
+    }
+    // ----------------------------
+
     document.querySelectorAll(".page-column.drop-active, .page-column-head.drop-active, .widget-group.drop-active").forEach(function(el) { el.classList.remove("drop-active"); });
 
     var dropZone = elementUnder.closest(".widget-group, .page-column, .page-column-head");
@@ -2937,14 +4190,24 @@ document.addEventListener("pointermove", function(e) {
 
     dropZone.classList.add("drop-active");
     var afterElement = getDragAfterElement(dropZone, e.clientY);
+    var shouldMove = false;
     if (afterElement == null) {
-        dropZone.appendChild(placeholder);
+        shouldMove = placeholder.parentNode !== dropZone || placeholder.nextSibling != null;
     } else {
-        dropZone.insertBefore(placeholder, afterElement);
+        shouldMove = placeholder.parentNode !== dropZone || placeholder.nextSibling !== afterElement;
+    }
+    if (shouldMove) {
+        if (afterElement == null) {
+            dropZone.appendChild(placeholder);
+        } else {
+            dropZone.insertBefore(placeholder, afterElement);
+        }
+        dragAfterCache.delete(dropZone);
     }
 });
 
 document.addEventListener("pointerup", function(e) {
+    resetHoverTab();
     if (!draggedWidget) return;
     if (e.pointerId !== dragPointerId) return;
 
@@ -2963,6 +4226,7 @@ document.addEventListener("pointerup", function(e) {
     draggedWidget = null;
     placeholder = null;
     dragPointerId = -1;
+    dragAfterCache.clear();
 
     pushLayoutHistory();
 });

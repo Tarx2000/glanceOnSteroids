@@ -15,6 +15,7 @@ type Repository struct {
 	Token               OptionalEnvString `yaml:"token"`
 	PullRequestsLimit   int               `yaml:"pull-requests-limit"`
 	IssuesLimit         int               `yaml:"issues-limit"`
+	CommitsLimit        int               `yaml:"commits-limit"`
 	RepositoryDetails   feed.RepositoryDetails
 }
 

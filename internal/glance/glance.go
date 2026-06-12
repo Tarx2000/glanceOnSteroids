@@ -26,6 +26,10 @@ import (
 var buildVersion = "dev"
 var buildNumber = "1"
 
+// BackgroundWidgetUpdateInterval is the duration between automatic background widget updates
+// when at least one client is connected via WebSocket.
+var BackgroundWidgetUpdateInterval = 30 * time.Second
+
 var sequentialWhitespacePattern = regexp.MustCompile(`\s+`)
 var sequentialHyphenPattern = regexp.MustCompile(`-+`)
 var invalidSlugCharsPattern = regexp.MustCompile(`[^a-z0-9\-]`)
@@ -85,11 +89,23 @@ type Page struct {
 }
 
 func (p *Page) UpdateOutdatedWidgets() bool {
+	p.mu.Lock()
+	if p.isUpdating {
+		p.mu.Unlock()
+		return false
+	}
+	p.isUpdating = true
+	p.mu.Unlock()
+
+	defer func() {
+		p.mu.Lock()
+		p.isUpdating = false
+		p.mu.Unlock()
+	}()
+
 	now := time.Now()
 
 	var wg sync.WaitGroup
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	// Semaphore to bound concurrency and prevent resource exhaustion
 	const maxConcurrentUpdates = 5
@@ -98,46 +114,83 @@ func (p *Page) UpdateOutdatedWidgets() bool {
 	var mu sync.Mutex
 	anyUpdated := false
 
+	// Helper to queue widget update
+	queueUpdate := func(wd widget.Widget, col string, idx int, nestedIdx int) {
+		if !wd.RequiresUpdate(&now) {
+			return
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			
+			// Acquire semaphore slot
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			
+			// Create a per-widget context with a timeout of 15 seconds.
+			// This prevents slow widgets from stalling the entire queue.
+			widgetCtx, widgetCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer widgetCancel()
+			
+			// Run update in a separate goroutine to prevent deadlocks if the update hangs
+			done := make(chan struct{})
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						slog.Error("Widget update panicked", "type", wd.GetType(), "col", col, "idx", idx, "panic", r)
+					}
+					close(done)
+				}()
+				wd.Update(widgetCtx)
+			}()
+			
+			select {
+			case <-done:
+				// Update completed within timeout
+			case <-time.After(20 * time.Second):
+				slog.Warn("Widget update timed out or hung during execution", "type", wd.GetType(), "col", col, "idx", idx)
+			}
+			
+			// Broadcast update for this specific widget immediately!
+			BroadcastMessage("widget_update", map[string]interface{}{
+				"page":       p.Slug,
+				"col":        col,
+				"idx":        idx,
+				"nested_idx": nestedIdx,
+			})
+			
+			mu.Lock()
+			anyUpdated = true
+			mu.Unlock()
+		}()
+	}
+
 	// Update columns widgets
 	for c := range p.Columns {
 		for w := range p.Columns[c].Widgets {
 			wItem := p.Columns[c].Widgets[w]
-
-			if !wItem.RequiresUpdate(&now) {
-				continue
+			colStr := strconv.Itoa(c)
+			if group, ok := wItem.(*widget.Group); ok {
+				for nwIdx, nw := range group.Widgets {
+					queueUpdate(nw, colStr, w, nwIdx)
+				}
+			} else {
+				queueUpdate(wItem, colStr, w, -1)
 			}
-
-			wg.Add(1)
-			go func(wd widget.Widget) {
-				defer wg.Done()
-				sem <- struct{}{}
-				defer func() { <-sem }()
-				wd.Update(ctx)
-				mu.Lock()
-				anyUpdated = true
-				mu.Unlock()
-			}(wItem)
 		}
 	}
 
 	// Update head widgets
 	for w := range p.HeadWidgets {
 		wItem := p.HeadWidgets[w]
-
-		if !wItem.RequiresUpdate(&now) {
-			continue
+		if group, ok := wItem.(*widget.Group); ok {
+			for nwIdx, nw := range group.Widgets {
+				queueUpdate(nw, "head", w, nwIdx)
+			}
+		} else {
+			queueUpdate(wItem, "head", w, -1)
 		}
-
-		wg.Add(1)
-		go func(wd widget.Widget) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			wd.Update(ctx)
-			mu.Lock()
-			anyUpdated = true
-			mu.Unlock()
-		}(wItem)
 	}
 
 	wg.Wait()
@@ -190,6 +243,9 @@ func (a *Application) HandlePageRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Trigger asynchronous background pre-fetch
+	go page.UpdateOutdatedWidgets()
+
 	pageData := templateData{
 		Page: page,
 		App:  a,
@@ -219,6 +275,9 @@ func (a *Application) HandlePageContentRequest(w http.ResponseWriter, r *http.Re
 		a.HandleNotFound(w, r)
 		return
 	}
+
+	// Trigger asynchronous background pre-fetch
+	go page.UpdateOutdatedWidgets()
 
 	pageData := templateData{
 		Page: page,
@@ -285,9 +344,11 @@ func (a *Application) Serve() error {
 
 	// Layout and widget configuration API endpoints
 	mux.HandleFunc("POST /api/layout/save", a.HandleLayoutSave)
+	mux.HandleFunc("POST /api/layout/batch-save", a.HandleLayoutBatchSave)
 	mux.HandleFunc("POST /api/widgets/add", a.HandleWidgetAdd)
 	mux.HandleFunc("POST /api/widgets/delete", a.HandleWidgetDelete)
 	mux.HandleFunc("GET /api/widgets/get", a.HandleWidgetGet)
+	mux.HandleFunc("GET /api/widgets/render", a.HandleWidgetRender)
 	mux.HandleFunc("POST /api/widgets/update", a.HandleWidgetUpdate)
 
 	// Settings & Page API endpoints
@@ -309,9 +370,17 @@ func (a *Application) Serve() error {
 		mux.Handle("/assets/{path...}", http.StripPrefix("/assets/", assetsFS))
 	}
 
+	var handler http.Handler = mux
+	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		slog.Info("Request started", "method", r.Method, "url", r.URL.String(), "remote", r.RemoteAddr)
+		mux.ServeHTTP(w, r)
+		slog.Info("Request finished", "method", r.Method, "url", r.URL.String(), "duration", time.Since(start))
+	})
+
 	server := http.Server{
 		Addr:    fmt.Sprintf("%s:%d", a.Config.Server.Host, a.Config.Server.Port),
-		Handler: mux,
+		Handler: handler,
 	}
 
 	slog.Info("Starting server", "host", a.Config.Server.Host, "port", a.Config.Server.Port)
@@ -328,6 +397,31 @@ func (a *Application) Serve() error {
 			}
 		}
 		slog.Info("Pre-warming widget cache completed")
+	}()
+
+	// Periodic background updates to keep widget cache fresh
+	go func() {
+		ticker := time.NewTicker(BackgroundWidgetUpdateInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			activePages := ActivePages()
+			if len(activePages) == 0 {
+				continue // Nobody is online, skip background updates entirely
+			}
+
+			a.configMu.RLock()
+			pages := make([]*Page, len(a.Config.Pages))
+			for i := range a.Config.Pages {
+				pages[i] = &a.Config.Pages[i]
+			}
+			a.configMu.RUnlock()
+
+			for _, page := range pages {
+				if activePages[page.Slug] {
+					page.UpdateOutdatedWidgets()
+				}
+			}
+		}
 	}()
 
 	return server.ListenAndServe()
@@ -518,42 +612,63 @@ func (a *Application) HandleLayoutSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build a map of all original widgets by their coordinates before making any edits.
+	// Build a map of all original widgets across ALL pages by their coordinate before making any edits.
 	// This prevents AST mutations from corrupting our ability to look up widgets.
 	originalNodesMap := make(map[string]*yaml.Node)
+	nodesToDelete := make(map[*yaml.Node]bool)
 
-	headNode := findMapValue(pageNode, "head-widgets")
-	if headNode != nil && headNode.Kind == yaml.SequenceNode {
-		for wIdx, w := range headNode.Content {
-			id := fmt.Sprintf("head:%d", wIdx)
-			originalNodesMap[id] = w
-
-			// If it's a group, catalog its original children
-			widgetsNode := findMapValue(w, "widgets")
-			if widgetsNode != nil && widgetsNode.Kind == yaml.SequenceNode {
-				for nwIdx, nw := range widgetsNode.Content {
-					childId := fmt.Sprintf("head:%d:%d", wIdx, nwIdx)
-					originalNodesMap[childId] = nw
-				}
+	rootMap := rootNode.Content[0]
+	pagesNode := findMapValue(rootMap, "pages")
+	if pagesNode != nil && pagesNode.Kind == yaml.SequenceNode {
+		for _, pNode := range pagesNode.Content {
+			nameNode := findMapValue(pNode, "name")
+			slugNode := findMapValue(pNode, "slug")
+			slug := ""
+			if slugNode != nil {
+				slug = slugNode.Value
+			} else if nameNode != nil {
+				slug = titleToSlug(nameNode.Value)
 			}
-		}
-	}
+			if slug == "" {
+				continue
+			}
 
-	// Catalog widgets from columns
-	if columnsNode != nil && columnsNode.Kind == yaml.SequenceNode {
-		for colIdx, colNode := range columnsNode.Content {
-			widgetsNode := findMapValue(colNode, "widgets")
-			if widgetsNode != nil && widgetsNode.Kind == yaml.SequenceNode {
-				for wIdx, w := range widgetsNode.Content {
-					id := fmt.Sprintf("%d:%d", colIdx, wIdx)
+			// Catalog head widgets
+			hNode := findMapValue(pNode, "head-widgets")
+			if hNode != nil && hNode.Kind == yaml.SequenceNode {
+				for wIdx, w := range hNode.Content {
+					id := fmt.Sprintf("%s:head:%d", slug, wIdx)
 					originalNodesMap[id] = w
 
 					// If it's a group, catalog its original children
-					groupWidgets := findMapValue(w, "widgets")
-					if groupWidgets != nil && groupWidgets.Kind == yaml.SequenceNode {
-						for nwIdx, nw := range groupWidgets.Content {
-							childId := fmt.Sprintf("%d:%d:%d", colIdx, wIdx, nwIdx)
+					widgetsNode := findMapValue(w, "widgets")
+					if widgetsNode != nil && widgetsNode.Kind == yaml.SequenceNode {
+						for nwIdx, nw := range widgetsNode.Content {
+							childId := fmt.Sprintf("%s:head:%d:%d", slug, wIdx, nwIdx)
 							originalNodesMap[childId] = nw
+						}
+					}
+				}
+			}
+
+			// Catalog widgets from columns
+			colsNode := findMapValue(pNode, "columns")
+			if colsNode != nil && colsNode.Kind == yaml.SequenceNode {
+				for colIdx, colNode := range colsNode.Content {
+					widgetsNode := findMapValue(colNode, "widgets")
+					if widgetsNode != nil && widgetsNode.Kind == yaml.SequenceNode {
+						for wIdx, w := range widgetsNode.Content {
+							id := fmt.Sprintf("%s:%d:%d", slug, colIdx, wIdx)
+							originalNodesMap[id] = w
+
+							// If it's a group, catalog its original children
+							groupWidgets := findMapValue(w, "widgets")
+							if groupWidgets != nil && groupWidgets.Kind == yaml.SequenceNode {
+								for nwIdx, nw := range groupWidgets.Content {
+									childId := fmt.Sprintf("%s:%d:%d:%d", slug, colIdx, wIdx, nwIdx)
+									originalNodesMap[childId] = nw
+								}
+							}
 						}
 					}
 				}
@@ -563,7 +678,39 @@ func (a *Application) HandleLayoutSave(w http.ResponseWriter, r *http.Request) {
 
 	// Helper function to resolve old widget node using the pre-cataloged map
 	lookupNode := func(idStr string) *yaml.Node {
-		return originalNodesMap[idStr]
+		parts := strings.Split(idStr, ":")
+		var fullId string
+		if len(parts) == 2 {
+			// e.g. "colIdx:wIdx" -> prepend payload.PageSlug
+			fullId = payload.PageSlug + ":" + idStr
+		} else if len(parts) == 3 {
+			// e.g. "colIdx:wIdx:nwIdx" or "page-slug:colIdx:wIdx" or "page-slug:head:wIdx"
+			// If the first part is an integer or "head", then it does NOT have a page slug.
+			_, err1 := strconv.Atoi(parts[0])
+			if err1 == nil || parts[0] == "head" {
+				fullId = payload.PageSlug + ":" + idStr
+			} else {
+				fullId = idStr
+			}
+		} else if len(parts) == 4 {
+			// e.g. "page-slug:colIdx:wIdx:nwIdx"
+			fullId = idStr
+		} else {
+			fullId = idStr
+		}
+
+		node := originalNodesMap[fullId]
+		// Mark node to delete from its original page if the widget is moved to a different page
+		if node != nil {
+			firstColon := strings.Index(fullId, ":")
+			if firstColon != -1 {
+				sourcePage := fullId[:firstColon]
+				if sourcePage != payload.PageSlug {
+					nodesToDelete[node] = true
+				}
+			}
+		}
+		return node
 	}
 
 	// collectReferencedIds extracts all base widget IDs from the payload before mutation
@@ -659,6 +806,7 @@ func (a *Application) HandleLayoutSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Reconstruct head-widgets if payload contains them or page had them
+	headNode := findMapValue(pageNode, "head-widgets")
 	if len(payload.Head) > 0 {
 		if headNode == nil {
 			headKeyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "head-widgets"}
@@ -695,6 +843,71 @@ func (a *Application) HandleLayoutSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Clean up deleted/moved widgets from non-destination pages
+	isGroupNode := func(node *yaml.Node) bool {
+		typeNode := findMapValue(node, "type")
+		return typeNode != nil && typeNode.Value == "group"
+	}
+
+	filterSequence := func(seqNode *yaml.Node) {
+		if seqNode == nil || seqNode.Kind != yaml.SequenceNode {
+			return
+		}
+		var newContent []*yaml.Node
+		for _, child := range seqNode.Content {
+			if nodesToDelete[child] {
+				continue // Delete this widget node
+			}
+			if isGroupNode(child) {
+				nestedWidgets := findMapValue(child, "widgets")
+				if nestedWidgets != nil && nestedWidgets.Kind == yaml.SequenceNode {
+					var newNestedContent []*yaml.Node
+					for _, nestedChild := range nestedWidgets.Content {
+						if !nodesToDelete[nestedChild] {
+							newNestedContent = append(newNestedContent, nestedChild)
+						}
+					}
+					nestedWidgets.Content = newNestedContent
+				}
+			}
+			newContent = append(newContent, child)
+		}
+		seqNode.Content = newContent
+	}
+
+	if pagesNode != nil && pagesNode.Kind == yaml.SequenceNode {
+		for _, pNode := range pagesNode.Content {
+			nameNode := findMapValue(pNode, "name")
+			slugNode := findMapValue(pNode, "slug")
+			slug := ""
+			if slugNode != nil {
+				slug = slugNode.Value
+			} else if nameNode != nil {
+				slug = titleToSlug(nameNode.Value)
+			}
+			if slug == "" || slug == payload.PageSlug {
+				continue // Skip destination page as it was overwritten
+			}
+
+			// Clean head widgets
+			hNode := findMapValue(pNode, "head-widgets")
+			if hNode != nil {
+				filterSequence(hNode)
+			}
+
+			// Clean columns
+			colsNode := findMapValue(pNode, "columns")
+			if colsNode != nil && colsNode.Kind == yaml.SequenceNode {
+				for _, colNode := range colsNode.Content {
+					widgetsNode := findMapValue(colNode, "widgets")
+					if widgetsNode != nil {
+						filterSequence(widgetsNode)
+					}
+				}
+			}
+		}
+	}
+
 	// Validate AST config before saving
 	if err := validateASTConfig(&rootNode); err != nil {
 		http.Error(w, "invalid layout structure: "+err.Error(), http.StatusBadRequest)
@@ -708,6 +921,353 @@ func (a *Application) HandleLayoutSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-reload config in-memory
+	if err := a.reloadConfig(); err != nil {
+		http.Error(w, "saved layout but failed to reload config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (a *Application) HandleLayoutBatchSave(w http.ResponseWriter, r *http.Request) {
+	a.configFileMu.Lock()
+	defer a.configFileMu.Unlock()
+
+	r.Body = http.MaxBytesReader(w, r.Body, 4*1024*1024)
+
+	var batchPayload struct {
+		Pages []struct {
+			PageSlug    string     `json:"page"`
+			Head        []string   `json:"head"`
+			Columns     [][]string `json:"columns"`
+			ColumnSizes []string   `json:"column_sizes"`
+		} `json:"pages"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&batchPayload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if len(batchPayload.Pages) == 0 {
+		http.Error(w, "no pages in batch", http.StatusBadRequest)
+		return
+	}
+
+	configBytes, err := os.ReadFile(a.ConfigPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var rootNode yaml.Node
+	if err := yaml.Unmarshal(configBytes, &rootNode); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	originalNodesMap := make(map[string]*yaml.Node)
+	nodesToDelete := make(map[*yaml.Node]bool)
+
+	rootMap := rootNode.Content[0]
+	pagesNode := findMapValue(rootMap, "pages")
+	if pagesNode != nil && pagesNode.Kind == yaml.SequenceNode {
+		for _, pNode := range pagesNode.Content {
+			nameNode := findMapValue(pNode, "name")
+			slugNode := findMapValue(pNode, "slug")
+			slug := ""
+			if slugNode != nil {
+				slug = slugNode.Value
+			} else if nameNode != nil {
+				slug = titleToSlug(nameNode.Value)
+			}
+			if slug == "" {
+				continue
+			}
+
+			hNode := findMapValue(pNode, "head-widgets")
+			if hNode != nil && hNode.Kind == yaml.SequenceNode {
+				for wIdx, w := range hNode.Content {
+					id := fmt.Sprintf("%s:head:%d", slug, wIdx)
+					originalNodesMap[id] = w
+					widgetsNode := findMapValue(w, "widgets")
+					if widgetsNode != nil && widgetsNode.Kind == yaml.SequenceNode {
+						for nwIdx, nw := range widgetsNode.Content {
+							childId := fmt.Sprintf("%s:head:%d:%d", slug, wIdx, nwIdx)
+							originalNodesMap[childId] = nw
+						}
+					}
+				}
+			}
+
+			colsNode := findMapValue(pNode, "columns")
+			if colsNode != nil && colsNode.Kind == yaml.SequenceNode {
+				for colIdx, colNode := range colsNode.Content {
+					widgetsNode := findMapValue(colNode, "widgets")
+					if widgetsNode != nil && widgetsNode.Kind == yaml.SequenceNode {
+						for wIdx, w := range widgetsNode.Content {
+							id := fmt.Sprintf("%s:%d:%d", slug, colIdx, wIdx)
+							originalNodesMap[id] = w
+							groupWidgets := findMapValue(w, "widgets")
+							if groupWidgets != nil && groupWidgets.Kind == yaml.SequenceNode {
+								for nwIdx, nw := range groupWidgets.Content {
+									childId := fmt.Sprintf("%s:%d:%d:%d", slug, colIdx, wIdx, nwIdx)
+									originalNodesMap[childId] = nw
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, payload := range batchPayload.Pages {
+		pageNode, err := findPageNode(&rootNode, payload.PageSlug)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		columnsNode := findMapValue(pageNode, "columns")
+		if columnsNode == nil || columnsNode.Kind != yaml.SequenceNode {
+			http.Error(w, "columns not found on page "+payload.PageSlug, http.StatusInternalServerError)
+			return
+		}
+
+		lookupNode := func(idStr string) *yaml.Node {
+			parts := strings.Split(idStr, ":")
+			var fullId string
+			if len(parts) == 2 {
+				fullId = payload.PageSlug + ":" + idStr
+			} else if len(parts) == 3 {
+				_, err1 := strconv.Atoi(parts[0])
+				if err1 == nil || parts[0] == "head" {
+					fullId = payload.PageSlug + ":" + idStr
+				} else {
+					fullId = idStr
+				}
+			} else if len(parts) == 4 {
+				fullId = idStr
+			} else {
+				fullId = idStr
+			}
+
+			node := originalNodesMap[fullId]
+			if node != nil {
+				firstColon := strings.Index(fullId, ":")
+				if firstColon != -1 {
+					sourcePage := fullId[:firstColon]
+					if sourcePage != payload.PageSlug {
+						nodesToDelete[node] = true
+					}
+				}
+			}
+			return node
+		}
+
+		collectReferencedIds := func() []string {
+			var ids []string
+			for _, idStr := range payload.Head {
+				if strings.Contains(idStr, "[") {
+					baseId := idStr[:strings.Index(idStr, "[")]
+					ids = append(ids, baseId)
+				} else {
+					ids = append(ids, idStr)
+				}
+			}
+			for _, col := range payload.Columns {
+				for _, idStr := range col {
+					if strings.Contains(idStr, "[") {
+						baseId := idStr[:strings.Index(idStr, "[")]
+						ids = append(ids, baseId)
+					} else {
+						ids = append(ids, idStr)
+					}
+				}
+			}
+			return ids
+		}
+
+		for _, id := range collectReferencedIds() {
+			if lookupNode(id) == nil {
+				slog.Warn("Layout batch save referenced unknown widget", "id", id)
+				http.Error(w, "unknown widget reference: "+id, http.StatusBadRequest)
+				return
+			}
+		}
+
+		var resolveWidgetNode func(idStr string) *yaml.Node
+		resolveWidgetNode = func(idStr string) *yaml.Node {
+			if strings.Contains(idStr, "[") {
+				openBrack := strings.Index(idStr, "[")
+				closeBrack := strings.Index(idStr, "]")
+				if openBrack == -1 || closeBrack == -1 || closeBrack <= openBrack {
+					return nil
+				}
+				baseId := idStr[:openBrack]
+				childrenStr := idStr[openBrack+1 : closeBrack]
+
+				groupNode := lookupNode(baseId)
+				if groupNode == nil {
+					return nil
+				}
+
+				widgetsNode := findMapValue(groupNode, "widgets")
+				if widgetsNode == nil {
+					widgetsNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+					groupNode.Content = append(groupNode.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "widgets"}, widgetsNode)
+				}
+
+				widgetsNode.Content = []*yaml.Node{}
+				if childrenStr != "" {
+					childIds := strings.Split(childrenStr, ",")
+					for _, childId := range childIds {
+						childNode := resolveWidgetNode(strings.TrimSpace(childId))
+						if childNode != nil {
+							widgetsNode.Content = append(widgetsNode.Content, childNode)
+						}
+					}
+				}
+				return groupNode
+			}
+			return lookupNode(idStr)
+		}
+
+		if len(payload.ColumnSizes) > 0 {
+			var newCols []*yaml.Node
+			for _, size := range payload.ColumnSizes {
+				colMap := map[string]interface{}{
+					"size":    size,
+					"widgets": []interface{}{},
+				}
+				var colDoc yaml.Node
+				_ = colDoc.Encode(colMap)
+				var colNode *yaml.Node
+				if colDoc.Kind == yaml.DocumentNode && len(colDoc.Content) > 0 {
+					colNode = colDoc.Content[0]
+				} else {
+					colNode = &colDoc
+				}
+				newCols = append(newCols, colNode)
+			}
+			columnsNode.Content = newCols
+		}
+
+		headNode := findMapValue(pageNode, "head-widgets")
+		if len(payload.Head) > 0 {
+			if headNode == nil {
+				headKeyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "head-widgets"}
+				headNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+				pageNode.Content = append(pageNode.Content, headKeyNode, headNode)
+			}
+			headNode.Content = []*yaml.Node{}
+			for _, idStr := range payload.Head {
+				node := resolveWidgetNode(idStr)
+				if node != nil {
+					headNode.Content = append(headNode.Content, node)
+				}
+			}
+		} else if headNode != nil {
+			headNode.Content = []*yaml.Node{}
+		}
+
+		for colIdx, colNode := range columnsNode.Content {
+			widgetsNode := findMapValue(colNode, "widgets")
+			if widgetsNode == nil {
+				widgetsNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+				colNode.Content = append(colNode.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "widgets"}, widgetsNode)
+			}
+
+			widgetsNode.Content = []*yaml.Node{}
+			if colIdx < len(payload.Columns) {
+				for _, idStr := range payload.Columns[colIdx] {
+					node := resolveWidgetNode(idStr)
+					if node != nil {
+						widgetsNode.Content = append(widgetsNode.Content, node)
+					}
+				}
+			}
+		}
+	}
+
+	isGroupNode := func(node *yaml.Node) bool {
+		typeNode := findMapValue(node, "type")
+		return typeNode != nil && typeNode.Value == "group"
+	}
+
+	filterSequence := func(seqNode *yaml.Node) {
+		if seqNode == nil || seqNode.Kind != yaml.SequenceNode {
+			return
+		}
+		var newContent []*yaml.Node
+		for _, child := range seqNode.Content {
+			if nodesToDelete[child] {
+				continue
+			}
+			if isGroupNode(child) {
+				nestedWidgets := findMapValue(child, "widgets")
+				if nestedWidgets != nil && nestedWidgets.Kind == yaml.SequenceNode {
+					var newNestedContent []*yaml.Node
+					for _, nestedChild := range nestedWidgets.Content {
+						if !nodesToDelete[nestedChild] {
+							newNestedContent = append(newNestedContent, nestedChild)
+						}
+					}
+					nestedWidgets.Content = newNestedContent
+				}
+			}
+			newContent = append(newContent, child)
+		}
+		seqNode.Content = newContent
+	}
+
+	destinationSlugs := make(map[string]bool)
+	for _, payload := range batchPayload.Pages {
+		destinationSlugs[payload.PageSlug] = true
+	}
+
+	if pagesNode != nil && pagesNode.Kind == yaml.SequenceNode {
+		for _, pNode := range pagesNode.Content {
+			nameNode := findMapValue(pNode, "name")
+			slugNode := findMapValue(pNode, "slug")
+			slug := ""
+			if slugNode != nil {
+				slug = slugNode.Value
+			} else if nameNode != nil {
+				slug = titleToSlug(nameNode.Value)
+			}
+			if slug == "" || destinationSlugs[slug] {
+				continue
+			}
+
+			hNode := findMapValue(pNode, "head-widgets")
+			if hNode != nil {
+				filterSequence(hNode)
+			}
+
+			colsNode := findMapValue(pNode, "columns")
+			if colsNode != nil && colsNode.Kind == yaml.SequenceNode {
+				for _, colNode := range colsNode.Content {
+					widgetsNode := findMapValue(colNode, "widgets")
+					if widgetsNode != nil {
+						filterSequence(widgetsNode)
+					}
+				}
+			}
+		}
+	}
+
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid layout structure: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := saveNodeToDisk(a.ConfigPath, &rootNode); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	if err := a.reloadConfig(); err != nil {
 		http.Error(w, "saved layout but failed to reload config: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1085,6 +1645,67 @@ func (a *Application) HandleWidgetDelete(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 }
 
+// HandleWidgetRender renders the HTML of a single widget on a page.
+func (a *Application) HandleWidgetRender(w http.ResponseWriter, r *http.Request) {
+	pageSlug := r.URL.Query().Get("page")
+	columnStr := r.URL.Query().Get("column")
+	widgetIdxStr := r.URL.Query().Get("widget")
+	nestedIdxStr := r.URL.Query().Get("nested")
+
+	a.configMu.RLock()
+	page, exists := a.slugToPage[pageSlug]
+	a.configMu.RUnlock()
+
+	if !exists {
+		http.Error(w, "page not found", http.StatusNotFound)
+		return
+	}
+
+	var wd widget.Widget
+
+	if columnStr == "head" {
+		idx, err := strconv.Atoi(widgetIdxStr)
+		if err == nil && idx >= 0 && idx < len(page.HeadWidgets) {
+			wd = page.HeadWidgets[idx]
+		}
+	} else {
+		colIdx, err := strconv.Atoi(columnStr)
+		if err == nil && colIdx >= 0 && colIdx < len(page.Columns) {
+			column := &page.Columns[colIdx]
+			idx, err := strconv.Atoi(widgetIdxStr)
+			if err == nil && idx >= 0 && idx < len(column.Widgets) {
+				wd = column.Widgets[idx]
+			}
+		}
+	}
+
+	if wd == nil {
+		http.Error(w, "widget not found", http.StatusNotFound)
+		return
+	}
+
+	if nestedIdxStr != "" {
+		nestedIdx, err := strconv.Atoi(nestedIdxStr)
+		if err == nil && nestedIdx >= 0 {
+			if group, ok := wd.(*widget.Group); ok {
+				if nestedIdx < len(group.Widgets) {
+					wd = group.Widgets[nestedIdx]
+				} else {
+					http.Error(w, "nested widget not found", http.StatusNotFound)
+					return
+				}
+			} else {
+				http.Error(w, "widget is not a group", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Write([]byte(wd.Render()))
+}
+
 // HandleWidgetGet retrieves the type and properties of a single widget from glance.yml.
 func (a *Application) HandleWidgetGet(w http.ResponseWriter, r *http.Request) {
 	pageSlug := r.URL.Query().Get("page")
@@ -1407,14 +2028,14 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 	for k, v := range payload.Properties {
 		if f, ok := v.(float64); ok && f == float64(int(f)) {
 			switch k {
-			case "update-interval", "height", "limit", "collapse-after", "thumbnail-height", "viewport-limit", "max-days-ahead":
+			case "update-interval", "height", "limit", "collapse-after", "thumbnail-height", "card-height", "viewport-limit", "max-days-ahead", "commits-limit", "collapse-after-rows", "pull-requests-limit", "issues-limit":
 				v = int(f)
 			}
 		}
 		if s, ok := v.(string); ok {
 			if n, err := strconv.Atoi(s); err == nil {
 				switch k {
-				case "update-interval", "height", "limit", "collapse-after", "thumbnail-height", "viewport-limit", "max-days-ahead":
+				case "update-interval", "height", "limit", "collapse-after", "thumbnail-height", "card-height", "viewport-limit", "max-days-ahead", "commits-limit", "collapse-after-rows", "pull-requests-limit", "issues-limit":
 					v = n
 				}
 			}
@@ -1624,12 +2245,13 @@ func saveNodeToDisk(path string, node *yaml.Node) error {
 }
 
 var yamlKnownIntKeys = map[string]bool{
-	"update-interval":    true,
-	"height":             true,
-	"limit":              true,
-	"collapse-after":     true,
-	"thumbnail-height":   true,
-	"port":               true,
+	"update-interval":     true,
+	"height":              true,
+	"limit":               true,
+	"collapse-after":      true,
+	"thumbnail-height":    true,
+	"card-height":         true,
+	"port":                true,
 	"pull-requests-limit": true,
 	"issues-limit":        true,
 }

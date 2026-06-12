@@ -21,6 +21,7 @@ var upgrader = websocket.Upgrader{
 
 type Client struct {
 	conn *websocket.Conn
+	page string
 }
 
 type Hub struct {
@@ -41,6 +42,19 @@ func ActiveConnections() int {
 	globalHub.mu.Lock()
 	defer globalHub.mu.Unlock()
 	return len(globalHub.clients)
+}
+
+// ActivePages returns a map of page slugs currently being viewed by connected clients.
+func ActivePages() map[string]bool {
+	globalHub.mu.Lock()
+	defer globalHub.mu.Unlock()
+	pages := make(map[string]bool)
+	for client := range globalHub.clients {
+		if client.page != "" {
+			pages[client.page] = true
+		}
+	}
+	return pages
 }
 
 func (h *Hub) run() {
@@ -106,7 +120,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[WS] Upgrade failed: %v", err)
 		return
 	}
-	client := &Client{conn: conn}
+	pageSlug := r.URL.Query().Get("page")
+	client := &Client{conn: conn, page: pageSlug}
 	globalHub.register <- client
 
 	// Set reasonable read deadline and pong handler to detect stale clients
@@ -130,14 +145,26 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Read loop to detect disconnects
+	// Read loop to detect disconnects and handle client updates
 	go func() {
 		defer func() {
 			globalHub.unregister <- client
 		}()
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			_, msgBytes, err := conn.ReadMessage()
+			if err != nil {
 				break
+			}
+			var msg struct {
+				Type string `json:"type"`
+				Page string `json:"page"`
+			}
+			if err := json.Unmarshal(msgBytes, &msg); err == nil {
+				if msg.Type == "active_page" && msg.Page != "" {
+					globalHub.mu.Lock()
+					client.page = msg.Page
+					globalHub.mu.Unlock()
+				}
 			}
 		}
 	}()

@@ -1,0 +1,33 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+<!-- RSS Detailed List Layout - displays a detailed list of RSS items with description and categories -->
+<ul class="list list-gap-20 list-collapsible">
+    {{ range $i, $item := .Items }}
+    <li {{ if shouldCollapse $i $.CollapseAfter }}class="list-collapsible-item" style="--animation-delay: {{ itemAnimationDelay $i $.CollapseAfter }};"{{ end }}>
+        <div style="margin-bottom: 4px;">
+            <a class="size-title-dynamic color-primary-if-not-visited" style="font-weight: 600;" href="{{ .Link }}" target="_blank" rel="noreferrer">{{ .Title }}</a>
+        </div>
+        <ul class="list-horizontal-text" style="margin-bottom: 6px; font-size: 0.85em; opacity: 0.85;">
+            <li title="{{ $item.PublishedAt | formatTime }}" {{ dynamicRelativeTimeAttrs $item.PublishedAt }}>{{ .PublishedAt | relativeTime }}</li>
+            {{ if gt (len $.FeedRequests) 1 }}
+                <li><a href="{{ .ChannelURL }}" target="_blank" rel="noreferrer">{{ .ChannelName }}</a></li>
+            {{ end }}
+        </ul>
+        {{ if and (not .HideDescription) (ne .Description "") }}
+            <p style="font-size: 0.9em; opacity: 0.8; line-height: 1.4; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">{{ .Description }}</p>
+        {{ end }}
+        {{ if and (not .HideCategories) (gt (len .Categories) 0) }}
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px;">
+                {{ range .Categories }}
+                    <span style="font-size: 0.75rem; background: var(--color-widget-content-border); padding: 2px 6px; border-radius: 3px; opacity: 0.8;">{{ . }}</span>
+                {{ end }}
+            </div>
+        {{ end }}
+    </li>
+    {{ end }}
+</ul>
+    {{ if gt (len .Items) $.CollapseAfter }}
+        <label class="list-collapsible-label"><input type="checkbox" autocomplete="off" class="list-collapsible-input"></label>
+    {{ end }}
+{{ end }}

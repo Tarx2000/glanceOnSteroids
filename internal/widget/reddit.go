@@ -17,6 +17,7 @@ type Reddit struct {
 	Subreddit           string          `yaml:"subreddit"`
 	Style               string          `yaml:"style"`
 	ShowThumbnails      bool            `yaml:"show-thumbnails"`
+	ShowFlairs          bool            `yaml:"show-flairs"`
 	SortBy              string          `yaml:"sort-by"`
 	TopPeriod           string          `yaml:"top-period"`
 	Search              string          `yaml:"search"`
@@ -25,6 +26,7 @@ type Reddit struct {
 	Limit               int             `yaml:"limit"`
 	CollapseAfter       int             `yaml:"collapse-after"`
 	RequestUrlTemplate  string          `yaml:"request-url-template"`
+	Proxy               string          `yaml:"proxy"`
 }
 
 func (widget *Reddit) Initialize() error {

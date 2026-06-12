@@ -25,6 +25,16 @@ powershell -Command "$c = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_
 powershell -Command "Unblock-File -LiteralPath '%~dp0glance.exe'" 2>nul
 
 echo Starting b%BUILD%...
+
+:: Extract the server port from glance.yml dynamically (fallback to 8086)
+set "PORT=8086"
+for /f "usebackq delims=" %%p in (`powershell -Command "$p = (Get-Content 'glance.yml' | Select-String -Pattern '^\s*port:\s*(\d+)' | Select-Object -First 1).Matches.Groups[1].Value; if ($p) { $p } else { '8086' }"`) do set "PORT=%%p"
+
+echo.
+echo ==================================================
+echo   Dashboard is available at http://localhost:%PORT%
+echo ==================================================
+echo.
 :: Launch the dashboard application
 glance.exe
 

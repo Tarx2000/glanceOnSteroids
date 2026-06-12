@@ -152,6 +152,7 @@ type widgetBase struct {
 	CacheDuration       time.Duration `yaml:"-"`
 	CacheType           cacheType     `yaml:"-"`
 	NextUpdate          time.Time     `yaml:"-"`
+	LastUpdate          time.Time     `yaml:"-"` // Tracks when the widget data was last successfully updated
 	UpdateRetriedTimes  int           `yaml:"-"`
 	mu                  sync.Mutex    `yaml:"-"`
 }
@@ -235,14 +236,22 @@ func (w *widgetBase) withCacheDuration(duration time.Duration) *widgetBase {
 }
 
 func (w *widgetBase) withCacheOnTheHour() *widgetBase {
-	w.CacheType = cacheTypeOnTheHour
-
+	if w.CustomCacheDuration != 0 {
+		w.CacheType = cacheTypeDuration
+		w.CacheDuration = time.Duration(w.CustomCacheDuration)
+	} else {
+		w.CacheType = cacheTypeOnTheHour
+	}
 	return w
 }
 
 func (w *widgetBase) withCacheDaily() *widgetBase {
-	w.CacheType = cacheTypeDaily
-
+	if w.CustomCacheDuration != 0 {
+		w.CacheType = cacheTypeDuration
+		w.CacheDuration = time.Duration(w.CustomCacheDuration)
+	} else {
+		w.CacheType = cacheTypeDaily
+	}
 	return w
 }
 
@@ -293,6 +302,7 @@ func (w *widgetBase) canContinueUpdateAfterHandlingErr(err error) bool {
 		if !w.ContentAvailable {
 			w.ContentAvailable = true
 		}
+		w.LastUpdate = time.Now() // Set LastUpdate on partial success
 		return true
 	}
 
@@ -305,6 +315,7 @@ func (w *widgetBase) canContinueUpdateAfterHandlingErr(err error) bool {
 	// scheduleNextUpdate inline to prevent re-entrancy deadlock
 	w.NextUpdate = w.getNextUpdateTime()
 	w.UpdateRetriedTimes = 0
+	w.LastUpdate = time.Now() // Set LastUpdate on success
 	return true
 }
 
@@ -334,6 +345,7 @@ func (w *widgetBase) scheduleNextUpdate() *widgetBase {
 	defer w.Unlock()
 	w.NextUpdate = w.getNextUpdateTime()
 	w.UpdateRetriedTimes = 0
+	w.LastUpdate = time.Now() // Set LastUpdate on success
 	return w
 }
 
@@ -367,6 +379,7 @@ func (w *widgetBase) copyBaseStateFromLocked(src *widgetBase) {
 		w.TemplateBuffer.Write(src.TemplateBuffer.Bytes())
 	}
 	w.NextUpdate = src.NextUpdate
+	w.LastUpdate = src.LastUpdate // Copy LastUpdate state
 	w.UpdateRetriedTimes = src.UpdateRetriedTimes
 }
 

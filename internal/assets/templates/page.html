@@ -34,7 +34,7 @@
             <button id="btn-add-page" class="nav-item" style="display: none; cursor: pointer; background: none; border: none; font-family: inherit; font-size: 1.8rem; color: var(--color-primary); line-height: 1; padding: 0 10px; margin-bottom: 3px;" title="Add Dashboard">+</button>
         </div>
         <!-- Layout Edit Mode Controls -->
-        <div class="header-edit-controls" style="display: flex; align-items: center; gap: 15px;">
+        <div class="header-edit-controls" style="display: flex; align-items: center; gap: 15px; margin-left: auto;">
             <select id="select-page-layout" class="nav-item" style="display: none; cursor: pointer; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; padding: 4px 8px;">
                 <option value="full">1 Column (Full)</option>
                 <option value="small,full">2 Columns (Small, Full)</option>
@@ -134,8 +134,8 @@
 </div>
 
 <!-- Add Widget Dialog/Modal -->
-<div id="add-widget-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
-    <div style="background: var(--color-widget-background); border: 1px solid var(--color-widget-content-border); border-radius: var(--border-radius); padding: 25px; width: 450px; max-width: 92%; box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-family: inherit;">
+<div id="add-widget-modal" style="display: none; position: fixed; inset: 0; background: hsla(var(--bghs), var(--bgs), calc(var(--bgl) * 0.1), 0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+    <div style="background: var(--color-widget-background); border: 1px solid var(--color-widget-content-border); border-radius: var(--border-radius); padding: 25px; width: 450px; max-width: 92%; box-shadow: 0 12px 30px hsla(var(--bghs), var(--bgs), calc(var(--bgl) * 0.2), 0.5); font-family: inherit;">
         <h3 style="margin-bottom: 20px; font-size: 1.4rem; color: var(--color-text-highlight); border-bottom: 1px solid var(--color-separator); padding-bottom: 10px;">Add Widget</h3>
         <form id="add-widget-form">
             <div style="margin-bottom: 15px;">
@@ -147,7 +147,8 @@
                     <option value="hacker-news">Hacker News</option>
                     <option value="releases">Releases</option>
                     <option value="videos">Videos</option>
-                    <option value="stocks">Stocks (Markets)</option>
+                    <option value="stocks">Stocks</option>
+                    <option value="markets">Markets</option>
                     <option value="reddit">Reddit</option>
                     <option value="rss">RSS Feed</option>
                     <option value="monitor">Monitor Site</option>
@@ -156,6 +157,8 @@
                     <option value="repository">GitHub Repository</option>
                     <option value="spotify">Spotify Player</option>
                     <option value="calendar">Google Calendar</option>
+                    <option value="clock">Clock</option>
+                    <option value="custom-api">Custom API</option>
                     <option value="neuralwatt">NeuralWatt Usage</option>
                     <option value="server-stats">Server Stats</option>
                     <option value="group">Group Container</option>
@@ -181,8 +184,8 @@
 </div>
 
 <!-- Edit Widget Dialog/Modal -->
-<div id="edit-widget-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
-    <div style="background: var(--color-widget-background); border: 1px solid var(--color-widget-content-border); border-radius: var(--border-radius); padding: 25px; width: 450px; max-width: 92%; box-shadow: 0 12px 30px rgba(0,0,0,0.5); font-family: inherit; max-height: 90vh; overflow-y: auto; scrollbar-width: thin;">
+<div id="edit-widget-modal" style="display: none; position: fixed; inset: 0; background: hsla(var(--bghs), var(--bgs), calc(var(--bgl) * 0.1), 0.65); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(3px);">
+    <div style="background: var(--color-widget-background); border: 1px solid var(--color-widget-content-border); border-radius: var(--border-radius); padding: 25px; width: 450px; max-width: 92%; box-shadow: 0 12px 30px hsla(var(--bghs), var(--bgs), calc(var(--bgl) * 0.2), 0.5); font-family: inherit; max-height: 90vh; overflow-y: auto; scrollbar-width: thin;">
         <h3 id="edit-widget-title" style="margin-bottom: 20px; font-size: 1.4rem; color: var(--color-text-highlight); border-bottom: 1px solid var(--color-separator); padding-bottom: 10px;">Edit Widget</h3>
         <form id="edit-widget-form">
             <input type="hidden" id="edit-widget-col" />

@@ -10,12 +10,14 @@ import (
 )
 
 type Releases struct {
-	widgetBase    `yaml:",inline"`
-	Releases      feed.AppReleases  `yaml:"-"`
-	Repositories  []string          `yaml:"repositories"`
-	Token         OptionalEnvString `yaml:"token"`
-	Limit         int               `yaml:"limit"`
-	CollapseAfter int               `yaml:"collapse-after"`
+	widgetBase      `yaml:",inline"`
+	Releases        feed.AppReleases  `yaml:"-"`
+	Repositories    []string          `yaml:"repositories"`
+	Token           OptionalEnvString `yaml:"token"`
+	GitlabToken     OptionalEnvString `yaml:"gitlab-token"`
+	ShowSourceIcon  bool              `yaml:"show-source-icon"`
+	Limit           int               `yaml:"limit"`
+	CollapseAfter   int               `yaml:"collapse-after"`
 }
 
 func (widget *Releases) Initialize() error {
