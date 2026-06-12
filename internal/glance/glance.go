@@ -355,6 +355,7 @@ func (a *Application) Serve() error {
 	mux.HandleFunc("GET /api/settings", a.HandleSettingsGet)
 	mux.HandleFunc("POST /api/settings/save", a.HandleSettingsSave)
 	mux.HandleFunc("POST /api/pages/add", a.HandlePageAdd)
+	mux.HandleFunc("POST /api/pages/delete", a.HandlePageDelete)
 
 	mux.HandleFunc("POST /api/config/import", a.HandleConfigImport)
 
@@ -2549,7 +2550,100 @@ func (a *Application) HandlePageAdd(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// updateTopLevelKey helper updates a top-level key inside the YAML root MappingNode.
+func (a *Application) HandlePageDelete(w http.ResponseWriter, r *http.Request) {
+	a.configFileMu.Lock()
+	defer a.configFileMu.Unlock()
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
+
+	var payload struct {
+		Slug string `json:"slug"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	payload.Slug = strings.TrimSpace(payload.Slug)
+	if payload.Slug == "" {
+		http.Error(w, "page slug cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	configBytes, err := os.ReadFile(a.ConfigPath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var rootNode yaml.Node
+	if err := yaml.Unmarshal(configBytes, &rootNode); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if len(rootNode.Content) == 0 {
+		http.Error(w, "empty YAML document", http.StatusInternalServerError)
+		return
+	}
+	rootMap := rootNode.Content[0]
+	pagesNode := findMapValue(rootMap, "pages")
+	if pagesNode == nil || pagesNode.Kind != yaml.SequenceNode {
+		http.Error(w, "pages block not found", http.StatusInternalServerError)
+		return
+	}
+
+	if len(pagesNode.Content) <= 1 {
+		http.Error(w, "cannot delete the last page", http.StatusBadRequest)
+		return
+	}
+
+	found := -1
+	for i := 0; i < len(pagesNode.Content); i++ {
+		pageNode := pagesNode.Content[i]
+		nameNode := findMapValue(pageNode, "name")
+		titleNode := findMapValue(pageNode, "title")
+		slugNode := findMapValue(pageNode, "slug")
+
+		slug := ""
+		if slugNode != nil {
+			slug = slugNode.Value
+		} else if nameNode != nil {
+			slug = titleToSlug(nameNode.Value)
+		} else if titleNode != nil {
+			slug = titleToSlug(titleNode.Value)
+		}
+
+		if slug == payload.Slug {
+			found = i
+			break
+		}
+	}
+
+	if found == -1 {
+		http.Error(w, "page not found", http.StatusNotFound)
+		return
+	}
+
+	pagesNode.Content = append(pagesNode.Content[:found], pagesNode.Content[found+1:]...)
+
+	if err := validateASTConfig(&rootNode); err != nil {
+		http.Error(w, "invalid config after deletion: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := saveNodeToDisk(a.ConfigPath, &rootNode); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := a.reloadConfig(); err != nil {
+		http.Error(w, "deleted page but failed to reload config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
 func updateTopLevelKey(rootMap *yaml.Node, key string, data interface{}) error {
 	if rootMap.Kind != yaml.MappingNode {
 		return fmt.Errorf("root node is not a mapping node")

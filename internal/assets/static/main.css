@@ -1404,11 +1404,28 @@ body.layout-edit-mode .page-column:hover {
     transform: scale(1.25);
 }
 
-/* Hide desktop navigation classes */
+/* Hide desktop navigation classes - but always show page tabs */
 @media (min-width: 800px) {
     .hide-desktop-nav {
-        display: none !important;
+        display: flex !important;
     }
+}
+
+.tab-delete-btn {
+    display: none;
+    margin-left: 6px;
+    font-size: 0.65em;
+    opacity: 0.4;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: opacity 0.2s, color 0.2s;
+}
+body.layout-edit-mode .tab-delete-btn {
+    display: inline;
+}
+.tab-delete-btn:hover {
+    opacity: 1;
+    color: var(--color-negative);
 }
 
 /* Page head widgets and groups */
@@ -1434,8 +1451,8 @@ body.layout-edit-mode .page-column:hover {
 /* Remove nested card styling inside Group widgets to avoid visual clutter */
 .widget-group > .widget > .widget-content:not(.widget-content-frameless),
 .widget-group > .widget > .widget-content-frame {
-    background: transparent;
-    border: none;
+    background: var(--color-widget-background);
+    border: 1px solid var(--color-widget-content-border);
     box-shadow: none;
 }
 
@@ -1461,11 +1478,6 @@ body.layout-edit-mode .page-column:hover {
 /* ----------------------------------------------------
    Steroids Layout Editor & Compatibility Style Fixes
    ---------------------------------------------------- */
-
-/* Override hide-desktop-nav when in edit mode so navigation + button can be accessed */
-body.layout-edit-mode .hide-desktop-nav {
-    display: flex !important;
-}
 
 /* Prevent widget and grid children overflow (critical for RSS / Videos carousels) */
 .widget {

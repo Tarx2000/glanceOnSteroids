@@ -797,13 +797,6 @@ function toggleEditMode(active) {
         historyIndex = 0;
         currentEditPageSlug = pageData.slug;
         editPageStates.clear();
-        editPageStates.set(pageData.slug, {
-            html: layoutOriginalHTML,
-            layoutHistory: layoutHistory.slice(),
-            historyIndex: 0,
-            spacingModified: false,
-            originalSpacing: null
-        });
         body.classList.add("layout-edit-mode");
         btnEdit.style.display = "none";
         btnAdd.style.display = "block";
@@ -814,6 +807,52 @@ function toggleEditMode(active) {
             updateUndoButtonState();
         }
         if (btnAddPage) btnAddPage.style.display = "inline-block";
+
+        document.querySelectorAll(".nav .nav-item").forEach(tab => {
+            if (tab.tagName === "A" && tab.getAttribute("href")) {
+                const slug = tab.getAttribute("href").replace(/^\//, "");
+                if (slug && slug !== "api/settings") {
+                    const pageTitle = tab.textContent.trim();
+                    const delBtn = document.createElement("span");
+                    delBtn.className = "tab-delete-btn";
+                    delBtn.textContent = "✕";
+                    delBtn.title = "Delete this page";
+                    delBtn.dataset.slug = slug;
+                    delBtn.dataset.pageTitle = pageTitle;
+                    delBtn.addEventListener("click", async function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const pageSlug = this.dataset.slug;
+                        const pageTitle = this.dataset.pageTitle;
+                        const navItems = document.querySelectorAll(".nav .nav-item[href]");
+                        if (navItems.length <= 1) {
+                            showToast("Cannot delete the last page", "error");
+                            return;
+                        }
+                        if (await showConfirmModal(`Delete the "${pageTitle}" page and all its widgets?`)) {
+                            try {
+                                const resp = await fetch("/api/pages/delete", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ slug: pageSlug })
+                                });
+                                if (resp.ok) {
+                                    showToast("Page deleted", "success");
+                                    window.location.reload();
+                                } else {
+                                    const err = await resp.text();
+                                    showToast("Failed to delete page: " + err, "error");
+                                }
+                            } catch (err) {
+                                showToast("Error: " + err.message, "error");
+                            }
+                        }
+                    });
+                    tab.appendChild(delBtn);
+                }
+            }
+        });
+
         if (selectLayout) {
             selectLayout.style.display = "block";
             // Pre-select current layout based on columns rendered in DOM
@@ -836,9 +875,18 @@ function toggleEditMode(active) {
         loadSpacingSettings();
         
         enableWidgetsDraggability(true);
+
+        editPageStates.set(pageData.slug, {
+            html: document.getElementById("page").innerHTML,
+            layoutHistory: layoutHistory.slice(),
+            historyIndex: 0,
+            spacingModified: false,
+            originalSpacing: null
+        });
     } else {
         cancelPointerDrag();
         body.classList.remove("layout-edit-mode");
+        document.querySelectorAll(".tab-delete-btn").forEach(b => b.remove());
         btnEdit.style.display = "block";
         btnAdd.style.display = "none";
         btnSave.style.display = "none";
@@ -1060,6 +1108,27 @@ async function saveLayout() {
     // Helper function to serialize a single widget (recursive for Group widgets)
     function serializeWidget(w, fallbackSlug) {
         const pageSlug = w.dataset.originalPage || fallbackSlug;
+        let col = w.dataset.originalCol;
+        let idx = w.dataset.originalIdx;
+        let nestedIdx = w.dataset.originalNestedIdx;
+
+        if (col === undefined || idx === undefined) {
+            const parentCol = w.closest(".page-column, .page-column-head");
+            if (parentCol) {
+                if (col === undefined) {
+                    col = parentCol.dataset.colIndex !== undefined ? parentCol.dataset.colIndex : (parentCol.classList.contains("page-column-head") ? "head" : "0");
+                }
+                if (idx === undefined) {
+                    const siblings = parentCol.querySelectorAll(":scope > .widget");
+                    siblings.forEach((s, i) => { if (s === w) idx = i; });
+                    if (idx === undefined) idx = "0";
+                }
+            } else {
+                if (col === undefined) col = "0";
+                if (idx === undefined) idx = "0";
+            }
+        }
+
         if (w.classList.contains("widget-type-group")) {
             const nestedGroup = w.querySelector(".widget-group");
             const children = [];
@@ -1069,14 +1138,14 @@ async function saveLayout() {
                     children.push(serializeWidget(nw, fallbackSlug));
                 });
             }
-            const baseId = `${pageSlug}:${w.dataset.originalCol}:${w.dataset.originalIdx}`;
+            const baseId = `${pageSlug}:${col}:${idx}`;
             return `${baseId}[${children.join(",")}]`;
         }
         
-        if (w.dataset.originalNestedIdx !== undefined) {
-            return `${pageSlug}:${w.dataset.originalCol}:${w.dataset.originalIdx}:${w.dataset.originalNestedIdx}`;
+        if (nestedIdx !== undefined) {
+            return `${pageSlug}:${col}:${idx}:${nestedIdx}`;
         }
-        return `${pageSlug}:${w.dataset.originalCol}:${w.dataset.originalIdx}`;
+        return `${pageSlug}:${col}:${idx}`;
     }
 
     function buildLayoutPayload(slug) {
@@ -2248,7 +2317,7 @@ function setupHeaderControls() {
             const selectedLayout = selectLayout.value;
             const newSizes = selectedLayout.split(",");
             
-            // 1. Gather all current widgets in order
+            // 1. Gather all current widgets in order (from columns only, not head)
             const allWidgets = [];
             const columns = document.querySelectorAll(".page-column");
             columns.forEach(col => {
@@ -2258,12 +2327,17 @@ function setupHeaderControls() {
                 });
             });
 
-            // 2. Clear page columns
+            // 2. Detach widgets before clearing to preserve DOM nodes
+            allWidgets.forEach(w => {
+                if (w.parentNode) w.parentNode.removeChild(w);
+            });
+
+            // 3. Clear page columns container
             const pageColumnsContainer = document.querySelector(".page-columns");
             if (!pageColumnsContainer) return;
             pageColumnsContainer.innerHTML = "";
 
-            // 3. Create new columns and distribute widgets
+            // 4. Create new columns and distribute widgets
             newSizes.forEach((size, idx) => {
                 const colDiv = document.createElement("div");
                 colDiv.className = `page-column page-column-${size}`;
@@ -2271,7 +2345,7 @@ function setupHeaderControls() {
                 pageColumnsContainer.appendChild(colDiv);
             });
 
-            // 4. Distribute widgets evenly across the new columns
+            // 5. Distribute widgets evenly across the new columns
             const targetCols = pageColumnsContainer.querySelectorAll(".page-column");
             if (targetCols.length > 0) {
                 allWidgets.forEach((w, idx) => {
@@ -4010,13 +4084,6 @@ async function switchPageDynamically(targetSlug, isDragging = false) {
                 currentEditPageSlug = targetSlug;
                 layoutHistory = [pageElement.innerHTML];
                 historyIndex = 0;
-                editPageStates.set(targetSlug, {
-                    html: pageElement.innerHTML,
-                    layoutHistory: layoutHistory.slice(),
-                    historyIndex: 0,
-                    spacingModified: false,
-                    originalSpacing: null
-                });
             }
         }
 
@@ -4052,6 +4119,15 @@ async function switchPageDynamically(targetSlug, isDragging = false) {
                 selectLayout.value = layoutKey || "full";
             }
             enableWidgetsDraggability(true);
+            if (!editPageStates.has(targetSlug)) {
+                editPageStates.set(targetSlug, {
+                    html: pageElement.innerHTML,
+                    layoutHistory: layoutHistory.slice(),
+                    historyIndex: 0,
+                    spacingModified: false,
+                    originalSpacing: null
+                });
+            }
             updateUndoButtonState();
         }
 
