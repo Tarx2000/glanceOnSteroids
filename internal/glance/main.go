@@ -61,19 +61,8 @@ func Main() int {
 			return 1
 		}
 
-		widget.SpotifyAuthorizedCheck = func() bool {
-			auth, _ := dbGetSetting("spotify_authorized", "false")
-			return auth == "true"
-		}
-
-		widget.GoogleAuthorizedCheck = func() bool {
-			auth, _ := dbGetSetting("google_authorized", "false")
-			return auth == "true"
-		}
-
-		widget.FetchGoogleEvents = func(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]widget.GoogleCalendarEvent, error) {
-			return fetchGoogleEventsFromAPI(ctx, calendarIDs, maxDaysAhead)
-		}
+		widget.Services = &glanceServiceProvider{}
+		ActiveConnectionsCheck = ActiveConnections
 
 		initWebSocket()
 
@@ -100,4 +89,26 @@ func Main() int {
 
 func configDir(configPath string) string {
 	return filepath.Dir(configPath)
+}
+
+type glanceServiceProvider struct{}
+
+func (p *glanceServiceProvider) SpotifyAuthorized() bool {
+	if Store == nil {
+		return false
+	}
+	auth, _ := Store.GetSetting("spotify_authorized", "false")
+	return auth == "true"
+}
+
+func (p *glanceServiceProvider) GoogleAuthorized() bool {
+	if Store == nil {
+		return false
+	}
+	auth, _ := Store.GetSetting("google_authorized", "false")
+	return auth == "true"
+}
+
+func (p *glanceServiceProvider) FetchGoogleEvents(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]widget.GoogleCalendarEvent, error) {
+	return fetchGoogleEventsFromAPI(ctx, calendarIDs, maxDaysAhead)
 }

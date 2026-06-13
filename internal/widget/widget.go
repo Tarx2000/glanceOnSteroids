@@ -20,6 +20,17 @@ import (
 
 var GlobalTimezone string
 
+// ExternalServiceProvider defines the interface for third-party integrations
+// such as Spotify and Google Calendar to bypass circular dependencies.
+type ExternalServiceProvider interface {
+	SpotifyAuthorized() bool
+	GoogleAuthorized() bool
+	FetchGoogleEvents(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]GoogleCalendarEvent, error)
+}
+
+// Services holds the concrete implementation of ExternalServiceProvider.
+var Services ExternalServiceProvider
+
 func New(widgetType string) (Widget, error) {
 	switch widgetType {
 	case "calendar":

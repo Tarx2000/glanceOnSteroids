@@ -110,8 +110,22 @@ func BroadcastMessage(msgType string, data interface{}) {
 	globalHub.mu.Unlock()
 }
 
+type SpotifyEvent struct {
+	Type string
+	Data interface{}
+}
+
+var SpotifyEventChan = make(chan SpotifyEvent, 100)
+
 func initWebSocket() {
 	go globalHub.run()
+
+	// Listen for Spotify events and broadcast them to connected WebSocket clients.
+	go func() {
+		for event := range SpotifyEventChan {
+			BroadcastMessage(event.Type, event.Data)
+		}
+	}()
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {

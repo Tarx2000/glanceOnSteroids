@@ -14,7 +14,51 @@ import (
 var (
 	dbInstance *sql.DB
 	dbMu       sync.Mutex
+	Store      SettingsStore
 )
+
+// SettingsStore defines the interface for reading and writing runtime settings.
+type SettingsStore interface {
+	GetSetting(key, defaultValue string) (string, error)
+	SetSetting(key, value string) error
+}
+
+// SQLiteStore implements SettingsStore using a SQLite database backend.
+type SQLiteStore struct {
+	db *sql.DB
+	mu sync.Mutex
+}
+
+func (s *SQLiteStore) SetSetting(key, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return fmt.Errorf("database not initialized")
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO settings (key, value)
+		VALUES (?, ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+	`, key, value)
+	return err
+}
+
+func (s *SQLiteStore) GetSetting(key, defaultValue string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.db == nil {
+		return defaultValue, fmt.Errorf("database not initialized")
+	}
+	var value string
+	err := s.db.QueryRow("SELECT value FROM settings WHERE key = ?;", key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return defaultValue, nil
+		}
+		return defaultValue, err
+	}
+	return value, nil
+}
 
 // initDB initializes the SQLite connection and runs schema setup.
 // It places the database in the same directory as the config file (e.g. `./glance.db`).
@@ -69,44 +113,22 @@ func initDB(configPath string) error {
 	}
 
 	dbInstance = db
+	Store = &SQLiteStore{db: db}
 	return nil
 }
 
-// dbSetSetting sets a key-value pair in the SQLite database.
+// dbSetSetting sets a key-value pair in the SQLite database (compatibility wrapper).
 func dbSetSetting(key, value string) error {
-	dbMu.Lock()
-	defer dbMu.Unlock()
-
-	if dbInstance == nil {
-		return fmt.Errorf("database not initialized")
+	if Store == nil {
+		return fmt.Errorf("store not initialized")
 	}
-
-	_, err := dbInstance.Exec(`
-		INSERT INTO settings (key, value)
-		VALUES (?, ?)
-		ON CONFLICT(key) DO UPDATE SET value = excluded.value;
-	`, key, value)
-	return err
+	return Store.SetSetting(key, value)
 }
 
-// dbGetSetting retrieves a value from the SQLite database by key.
-// If not found, it returns the provided default value.
+// dbGetSetting retrieves a value from the SQLite database by key (compatibility wrapper).
 func dbGetSetting(key, defaultValue string) (string, error) {
-	dbMu.Lock()
-	defer dbMu.Unlock()
-
-	if dbInstance == nil {
-		return defaultValue, fmt.Errorf("database not initialized")
+	if Store == nil {
+		return defaultValue, fmt.Errorf("store not initialized")
 	}
-
-	var value string
-	err := dbInstance.QueryRow("SELECT value FROM settings WHERE key = ?;", key).Scan(&value)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return defaultValue, nil
-		}
-		return defaultValue, err
-	}
-
-	return value, nil
+	return Store.GetSetting(key, defaultValue)
 }

@@ -65,112 +65,10 @@ func getGoogleRedirectURI(r *http.Request) string {
 	return fmt.Sprintf("%s://%s/api/google/callback", scheme, host)
 }
 
-// HandleGoogleLogin redirects user to Google OAuth consent screen.
-func (a *Application) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) {
-	if googleConfig.ClientID == "" {
-		http.Error(w, "Google Client ID is not configured. Add it under the google: block in glance.yml or as GOOGLE_CLIENT_ID environment variable.", http.StatusInternalServerError)
-		return
-	}
-
-	redirectURI := getGoogleRedirectURI(r)
-	slog.Info("[Google] Initiating OAuth login", "redirect_uri", redirectURI)
-	scope := "https://www.googleapis.com/auth/calendar.readonly"
-	authURL := fmt.Sprintf("https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=%s&redirect_uri=%s&scope=%s&access_type=offline&prompt=consent",
-		url.QueryEscape(googleConfig.ClientID),
-		url.QueryEscape(redirectURI),
-		url.QueryEscape(scope),
-	)
-	http.Redirect(w, r, authURL, http.StatusSeeOther)
-}
-
-// HandleGoogleCallback exchanges authorization code for tokens.
-func (a *Application) HandleGoogleCallback(w http.ResponseWriter, r *http.Request) {
-	code := r.URL.Query().Get("code")
-	if code == "" {
-		http.Error(w, "Authorization code missing", http.StatusBadRequest)
-		return
-	}
-
-	redirectURI := getGoogleRedirectURI(r)
-	slog.Info("[Google] Callback received", "redirect_uri", redirectURI)
-
-	data := url.Values{}
-	data.Set("grant_type", "authorization_code")
-	data.Set("code", code)
-	data.Set("redirect_uri", redirectURI)
-	data.Set("client_id", googleConfig.ClientID)
-	data.Set("client_secret", googleConfig.ClientSecret)
-
-	resp, err := http.PostForm("https://oauth2.googleapis.com/token", data)
-	if err != nil {
-		slog.Error("[Google] Token request failed", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var errRes map[string]interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&errRes)
-		slog.Error("[Google] Token exchange failed", "status", resp.StatusCode, "error", errRes)
-		http.Error(w, fmt.Sprintf("token exchange failed: %d - %v", resp.StatusCode, errRes), http.StatusInternalServerError)
-		return
-	}
-
-	var res struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
-		ExpiresIn    int    `json:"expires_in"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	if err := dbSetSetting("google_access_token", res.AccessToken); err != nil {
-		slog.Error("[Google] Failed to persist access token", "error", err)
-	}
-	if res.RefreshToken != "" {
-		if err := dbSetSetting("google_refresh_token", res.RefreshToken); err != nil {
-			slog.Error("[Google] Failed to persist refresh token", "error", err)
-		}
-	}
-	if res.ExpiresIn > 0 {
-		expiryTime := time.Now().Unix() + int64(res.ExpiresIn)
-		if err := dbSetSetting("google_access_token_expiry", strconv.FormatInt(expiryTime, 10)); err != nil {
-			slog.Error("[Google] Failed to persist token expiry", "error", err)
-		}
-	}
-	if err := dbSetSetting("google_authorized", "true"); err != nil {
-		slog.Error("[Google] Failed to persist authorized flag", "error", err)
-	}
-
-	// Force update all calendar widgets immediately so they reflect the authorized
-	// state on the dashboard page redirect, avoiding 10-minute cache latency.
-	a.configMu.RLock()
-	for i := range a.Config.Pages {
-		page := &a.Config.Pages[i]
-		flat := page.GetFlatWidgets()
-		for _, w := range flat {
-			if cal, ok := w.(*widget.Calendar); ok {
-				cal.Lock()
-				cal.NextUpdate = time.Time{} // Clear cache duration
-				cal.Unlock()
-				// Run update synchronously so dashboard redirect gets fresh events
-				cal.Update(context.Background())
-			}
-		}
-	}
-	a.configMu.RUnlock()
-
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
 // getGoogleAccessToken returns a valid access token, refreshing it if expired.
 func getGoogleAccessToken() (string, error) {
-	accessToken, _ := dbGetSetting("google_access_token", "")
-	tokenExpiryStr, _ := dbGetSetting("google_access_token_expiry", "")
+	accessToken, _ := Store.GetSetting("google_access_token", "")
+	tokenExpiryStr, _ := Store.GetSetting("google_access_token_expiry", "")
 
 	if accessToken != "" && tokenExpiryStr != "" {
 		expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
@@ -179,7 +77,7 @@ func getGoogleAccessToken() (string, error) {
 		}
 	}
 
-	refreshToken, _ := dbGetSetting("google_refresh_token", "")
+	refreshToken, _ := Store.GetSetting("google_refresh_token", "")
 	if refreshToken == "" {
 		return "", fmt.Errorf("no refresh token available, user must re-authorize")
 	}
@@ -216,12 +114,12 @@ func getGoogleAccessToken() (string, error) {
 		return "", err
 	}
 
-	if err := dbSetSetting("google_access_token", res.AccessToken); err != nil {
+	if err := Store.SetSetting("google_access_token", res.AccessToken); err != nil {
 		slog.Error("[Google] Failed to persist access token", "error", err)
 	}
 	if res.ExpiresIn > 0 {
 		expiryTime := time.Now().Unix() + int64(res.ExpiresIn)
-		if err := dbSetSetting("google_access_token_expiry", strconv.FormatInt(expiryTime, 10)); err != nil {
+		if err := Store.SetSetting("google_access_token_expiry", strconv.FormatInt(expiryTime, 10)); err != nil {
 			slog.Error("[Google] Failed to persist token expiry", "error", err)
 		}
 	}
@@ -236,58 +134,6 @@ type GoogleCalendarEntry struct {
 	Primary         bool   `json:"primary"`
 	BackgroundColor string `json:"backgroundColor"`
 	ForegroundColor string `json:"foregroundColor"`
-}
-
-// HandleGoogleCalendarsGet returns the list of available calendars for checkboxes layout.
-func (a *Application) HandleGoogleCalendarsGet(w http.ResponseWriter, r *http.Request) {
-	auth, _ := dbGetSetting("google_authorized", "false")
-	if auth != "true" {
-		http.Error(w, "Not authorized", http.StatusUnauthorized)
-		return
-	}
-
-	token, err := getGoogleAccessToken()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
-		return
-	}
-
-	req, err := http.NewRequest("GET", "https://www.googleapis.com/calendar/v3/users/me/calendarList", nil)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusUnauthorized {
-		_ = dbSetSetting("google_access_token", "")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		http.Error(w, fmt.Sprintf("Google API status: %d", resp.StatusCode), http.StatusInternalServerError)
-		return
-	}
-
-	var data struct {
-		Items []GoogleCalendarEntry `json:"items"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(data.Items)
 }
 
 // fetchGoogleEventsFromAPI fetches, merges, and filters events from multiple calendar IDs.

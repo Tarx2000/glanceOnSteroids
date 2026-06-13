@@ -7,10 +7,6 @@ import (
 	"github.com/glanceapp/glance/internal/assets"
 )
 
-// SpotifyAuthorizedCheck callback returns true if Spotify is authorized.
-// Wired dynamically from the main server code to bypass circular dependency.
-var SpotifyAuthorizedCheck func() bool
-
 // Spotify represents the Spotify player widget on the dashboard.
 type Spotify struct {
 	widgetBase `yaml:",inline"`
@@ -36,8 +32,8 @@ func (widget *Spotify) Render() template.HTML {
 
 // IsAuthorized returns true if the Spotify account is connected/authorized.
 func (widget *Spotify) IsAuthorized() bool {
-	if SpotifyAuthorizedCheck != nil {
-		return SpotifyAuthorizedCheck()
+	if Services != nil {
+		return Services.SpotifyAuthorized()
 	}
 	return false
 }

@@ -24,7 +24,19 @@ var (
 	lastVolume      int
 	lastSpotifyError string
 	spotifyPoller   sync.Once
+
+	// ActiveConnectionsCheck callback returns the number of active WebSocket connections.
+	// Wired dynamically from main server initialization to avoid circular package imports.
+	ActiveConnectionsCheck func() int
 )
+
+func publishSpotifyEvent(msgType string, data interface{}) {
+	select {
+	case SpotifyEventChan <- SpotifyEvent{Type: msgType, Data: data}:
+	default:
+		log.Printf("[Spotify] Event channel full, dropping event: %s", msgType)
+	}
+}
 
 // SpotifyTrack represents the currently playing track status.
 type SpotifyTrack struct {
@@ -72,8 +84,8 @@ func triggerInitialSpotifyPush() {
 		lastSpotifyError = errMsg
 		spotifyStateMu.Unlock()
 		log.Printf("[Spotify] Initial push failed: %v", err)
-		auth, _ := dbGetSetting("spotify_authorized", "false")
-		BroadcastMessage("spotify_update", map[string]interface{}{
+		auth, _ := Store.GetSetting("spotify_authorized", "false")
+		publishSpotifyEvent("spotify_update", map[string]interface{}{
 			"authorized": auth == "true",
 			"track":      nil,
 			"error":      errMsg,
@@ -90,7 +102,7 @@ func triggerInitialSpotifyPush() {
 	spotifyStateMu.Unlock()
 
 	log.Printf("[Spotify] Initial push: track=%q is_playing=%v", status.ID, status.IsPlaying)
-	BroadcastMessage("spotify_update", map[string]interface{}{
+	publishSpotifyEvent("spotify_update", map[string]interface{}{
 		"authorized": true,
 		"track":      status,
 		"error":      "",
@@ -107,11 +119,11 @@ func StartSpotifyPoller() {
 				time.Sleep(2 * time.Second)
 
 				// Skip polling if there are no active WebSocket connections
-				if ActiveConnections() == 0 {
+				if ActiveConnectionsCheck != nil && ActiveConnectionsCheck() == 0 {
 					continue
 				}
 
-				auth, _ := dbGetSetting("spotify_authorized", "false")
+				auth, _ := Store.GetSetting("spotify_authorized", "false")
 				if auth != "true" {
 					continue
 				}
@@ -128,7 +140,7 @@ func StartSpotifyPoller() {
 
 					if changed {
 						log.Printf("[Spotify] Poller broadcast error: %v", errMsg)
-						BroadcastMessage("spotify_update", map[string]interface{}{
+						publishSpotifyEvent("spotify_update", map[string]interface{}{
 							"authorized": true,
 							"track":      nil,
 							"error":      errMsg,
@@ -157,7 +169,7 @@ func StartSpotifyPoller() {
 
 				if changed {
 					log.Printf("[Spotify] Poller broadcast: track=%q is_playing=%v progress=%d duration=%d", status.ID, status.IsPlaying, status.Progress, status.Duration)
-					BroadcastMessage("spotify_update", map[string]interface{}{
+					publishSpotifyEvent("spotify_update", map[string]interface{}{
 						"authorized": true,
 						"track":      status,
 						"error":      "",
@@ -300,8 +312,8 @@ func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 
 // getSpotifyAccessToken returns a valid access token, auto-refreshing it if needed.
 func getSpotifyAccessToken() (string, error) {
-	accessToken, _ := dbGetSetting("spotify_access_token", "")
-	tokenExpiryStr, _ := dbGetSetting("spotify_access_token_expiry", "")
+	accessToken, _ := Store.GetSetting("spotify_access_token", "")
+	tokenExpiryStr, _ := Store.GetSetting("spotify_access_token_expiry", "")
 	
 	if accessToken != "" && tokenExpiryStr != "" {
 		expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
@@ -310,7 +322,7 @@ func getSpotifyAccessToken() (string, error) {
 		}
 	}
 
-	refreshToken, _ := dbGetSetting("spotify_refresh_token", "")
+	refreshToken, _ := Store.GetSetting("spotify_refresh_token", "")
 	if refreshToken == "" {
 		return "", fmt.Errorf("no refresh token available, user must re-authorize")
 	}
@@ -353,12 +365,12 @@ func getSpotifyAccessToken() (string, error) {
 		return "", err
 	}
 
-	if err := dbSetSetting("spotify_access_token", res.AccessToken); err != nil {
+	if err := Store.SetSetting("spotify_access_token", res.AccessToken); err != nil {
 		log.Printf("[Spotify] Failed to persist access token: %v", err)
 	}
 	if res.ExpiresIn > 0 {
 		expiryTime := time.Now().Unix() + int64(res.ExpiresIn)
-		if err := dbSetSetting("spotify_access_token_expiry", strconv.FormatInt(expiryTime, 10)); err != nil {
+		if err := Store.SetSetting("spotify_access_token_expiry", strconv.FormatInt(expiryTime, 10)); err != nil {
 			log.Printf("[Spotify] Failed to persist token expiry: %v", err)
 		}
 	}
@@ -387,7 +399,7 @@ func spotifyControlAction(method, path string, body io.Reader) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		if err := dbSetSetting("spotify_access_token", ""); err != nil {
+		if err := Store.SetSetting("spotify_access_token", ""); err != nil {
 			log.Printf("[Spotify] Failed to clear access token: %v", err)
 		}
 		return fmt.Errorf("unauthorized")
@@ -409,7 +421,7 @@ func TriggerImmediateSpotifyBroadcast() {
 		// Wait a short duration to let the Spotify API update its state
 		time.Sleep(250 * time.Millisecond)
 
-		auth, _ := dbGetSetting("spotify_authorized", "false")
+		auth, _ := Store.GetSetting("spotify_authorized", "false")
 		if auth != "true" {
 			return
 		}
@@ -421,7 +433,7 @@ func TriggerImmediateSpotifyBroadcast() {
 			lastSpotifyError = errMsg
 			spotifyStateMu.Unlock()
 			
-			BroadcastMessage("spotify_update", map[string]interface{}{
+			publishSpotifyEvent("spotify_update", map[string]interface{}{
 				"authorized": true,
 				"track":      nil,
 				"error":      errMsg,
@@ -437,7 +449,7 @@ func TriggerImmediateSpotifyBroadcast() {
 		lastSpotifyError = ""
 		spotifyStateMu.Unlock()
 
-		BroadcastMessage("spotify_update", map[string]interface{}{
+		publishSpotifyEvent("spotify_update", map[string]interface{}{
 			"authorized": true,
 			"track":      status,
 			"error":      "",

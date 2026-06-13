@@ -9,10 +9,6 @@ import (
 	"github.com/glanceapp/glance/internal/assets"
 )
 
-// GoogleAuthorizedCheck callback returns true if Google Calendar is authorized.
-// Wired dynamically from the main server code to bypass circular dependency.
-var GoogleAuthorizedCheck func() bool
-
 // GoogleCalendarEvent represents an event from Google Calendar API.
 type GoogleCalendarEvent struct {
 	Summary    string    `yaml:"summary"`
@@ -22,10 +18,6 @@ type GoogleCalendarEvent struct {
 	CalendarID string    `yaml:"calendar-id"`
 	Color      string    `yaml:"color"`
 }
-
-// FetchGoogleEvents callback fetches events from Google Calendar API.
-// Wired dynamically from the main server code to bypass circular dependency.
-var FetchGoogleEvents func(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]GoogleCalendarEvent, error)
 
 // Event is the formatted event for rendering in the calendar HTML template.
 type Event struct {
@@ -71,8 +63,8 @@ func (widget *Calendar) Initialize() error {
 
 func (widget *Calendar) Update(ctx context.Context) {
 	authorized := false
-	if GoogleAuthorizedCheck != nil {
-		authorized = GoogleAuthorizedCheck()
+	if Services != nil {
+		authorized = Services.GoogleAuthorized()
 	}
 
 	widget.Lock()
@@ -87,8 +79,8 @@ func (widget *Calendar) Update(ctx context.Context) {
 		return
 	}
 
-	if FetchGoogleEvents != nil {
-		rawEvents, err := FetchGoogleEvents(ctx, widget.Calendars, widget.MaxDaysAhead)
+	if Services != nil {
+		rawEvents, err := Services.FetchGoogleEvents(ctx, widget.Calendars, widget.MaxDaysAhead)
 		if err != nil {
 			widget.withError(err).scheduleEarlyUpdate()
 			return
