@@ -22,6 +22,15 @@ var upgrader = websocket.Upgrader{
 type Client struct {
 	conn *websocket.Conn
 	page string
+	mu   sync.Mutex
+}
+
+// WriteMessage writes a message to the client connection in a thread-safe manner with a write deadline.
+func (c *Client) WriteMessage(messageType int, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	return c.conn.WriteMessage(messageType, data)
 }
 
 type Hub struct {
@@ -34,8 +43,8 @@ type Hub struct {
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*Client]bool),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		register:   make(chan *Client, 256),
+		unregister: make(chan *Client, 256),
 	}
 }
 
@@ -94,19 +103,29 @@ func (h *Hub) BroadcastMessage(msgType string, data interface{}) {
 	}
 
 	h.mu.Lock()
-	var failed []*Client
+	clients := make([]*Client, 0, len(h.clients))
 	for client := range h.clients {
-		err := client.conn.WriteMessage(websocket.TextMessage, msgBytes)
+		clients = append(clients, client)
+	}
+	h.mu.Unlock()
+
+	var failed []*Client
+	for _, client := range clients {
+		err := client.WriteMessage(websocket.TextMessage, msgBytes)
 		if err != nil {
 			log.Printf("[WS] Error writing to socket: %v", err)
 			client.conn.Close()
 			failed = append(failed, client)
 		}
 	}
-	for _, c := range failed {
-		delete(h.clients, c)
+
+	if len(failed) > 0 {
+		h.mu.Lock()
+		for _, c := range failed {
+			delete(h.clients, c)
+		}
+		h.mu.Unlock()
 	}
-	h.mu.Unlock()
 }
 
 func (a *Application) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +157,7 @@ func (a *Application) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		for {
 			select {
 			case <-ticker.C:
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				if err := client.WriteMessage(websocket.PingMessage, nil); err != nil {
 					return
 				}
 			}
