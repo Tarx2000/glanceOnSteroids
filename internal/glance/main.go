@@ -61,15 +61,7 @@ func Main() int {
 			return 1
 		}
 
-		widget.Services = &glanceServiceProvider{}
-		ActiveConnectionsCheck = ActiveConnections
-
-		initWebSocket()
-
-		InitSpotify(config.Spotify.ClientID, config.Spotify.ClientSecret, config.Spotify.RedirectURL)
 		InitGoogle(config.Google.ClientID, config.Google.ClientSecret, config.Google.RedirectURL)
-
-		StartSpotifyPoller()
 
 		app, err := NewApplication(config, options.ConfigPath)
 

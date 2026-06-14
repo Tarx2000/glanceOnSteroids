@@ -105,7 +105,7 @@ func (a *Application) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 				cal.Lock()
 				cal.NextUpdate = time.Time{} // Clear cache duration
 				cal.Unlock()
-				cal.Update(context.Background())
+				cal.Update(context.Background(), &glanceServiceProvider{})
 			}
 		}
 	}

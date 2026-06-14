@@ -538,6 +538,16 @@ function updateSpotifyWidget(data) {
         if (iconPlay) iconPlay.style.display = "block";
         if (iconPause) iconPause.style.display = "none";
         clearInterval(spotifyInterval);
+
+        // Dynamically update subtitle to reflect network connection loss if needed
+        const idleSubtitle = document.querySelector("#spotify-idle-state .spotify-idle-subtitle");
+        if (idleSubtitle) {
+            if (data && data.connectionLost) {
+                idleSubtitle.innerText = "Connection lost. Reconnecting...";
+            } else {
+                idleSubtitle.innerText = "No active playback found";
+            }
+        }
         return;
     }
 
@@ -768,6 +778,12 @@ function setupWebSockets() {
 
     ws.onclose = function () {
         console.log("[WS] Connection lost. Reconnecting in 5s...");
+        // Inform Spotify widget of connection loss so it can update its UI status
+        updateSpotifyWidget({
+            authorized: true,
+            track: null,
+            connectionLost: true
+        });
         setTimeout(setupWebSockets, 5000);
     };
 }
@@ -3004,6 +3020,24 @@ async function refreshWidget(col, idx, nestedIdx) {
             
             // Re-assign coordinate data attributes to the new element
             assignDomCoordinates();
+
+            // Re-apply Spotify widget state and redirect URI hint if the refreshed widget is the Spotify player
+            const spotifyPlayer = newWidgetEl.querySelector("#spotify-player") || (newWidgetEl.id === "spotify-player" ? newWidgetEl : null);
+            if (spotifyPlayer) {
+                const hint = spotifyPlayer.querySelector("#spotify-redirect-hint");
+                if (hint) {
+                    const redirectURI = window.location.origin + "/api/spotify/callback";
+                    hint.textContent = "Redirect URI: " + redirectURI;
+                }
+                if (lastSpotifyState) {
+                    updateSpotifyWidget(lastSpotifyState);
+                } else {
+                    const cachedAuth = localStorage.getItem("spotify_last_auth");
+                    if (cachedAuth === "true") {
+                        updateSpotifyWidget({ authorized: true, track: null });
+                    }
+                }
+            }
 
             // Re-run setup functions to initialize script features on the new elements
             setupLazyImages();

@@ -18,6 +18,11 @@ type Stocks struct {
 	Style      string      `yaml:"style"`
 }
 
+func init() {
+	Register("stocks", func() Widget { return &Stocks{} })
+	Register("markets", func() Widget { return &Stocks{} })
+}
+
 func (widget *Stocks) Initialize() error {
 	widget.withTitle("Markets").withCacheDuration(time.Hour)
 
@@ -28,7 +33,7 @@ func (widget *Stocks) Initialize() error {
 	return nil
 }
 
-func (widget *Stocks) Update(ctx context.Context) {
+func (widget *Stocks) Update(ctx context.Context, services ExternalServiceProvider) {
 	stocks, err := feed.FetchStocksDataFromYahoo(widget.Stocks)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {

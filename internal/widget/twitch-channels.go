@@ -16,6 +16,10 @@ type TwitchChannels struct {
 	CollapseAfter   int                  `yaml:"collapse-after"`
 }
 
+func init() {
+	Register("twitch-channels", func() Widget { return &TwitchChannels{} })
+}
+
 func (widget *TwitchChannels) Initialize() error {
 	widget.withTitle("Twitch Channels").withCacheDuration(time.Minute * 10)
 
@@ -26,7 +30,7 @@ func (widget *TwitchChannels) Initialize() error {
 	return nil
 }
 
-func (widget *TwitchChannels) Update(ctx context.Context) {
+func (widget *TwitchChannels) Update(ctx context.Context, services ExternalServiceProvider) {
 	channels, err := feed.FetchChannelsFromTwitch(widget.ChannelsRequest)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {

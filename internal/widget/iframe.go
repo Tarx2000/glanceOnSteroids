@@ -16,6 +16,10 @@ type IFrame struct {
 	Height     int           `yaml:"height"`
 }
 
+func init() {
+	Register("iframe", func() Widget { return &IFrame{} })
+}
+
 func (widget *IFrame) Initialize() error {
 	widget.withTitle("IFrame").withError(nil)
 

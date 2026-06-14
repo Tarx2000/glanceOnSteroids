@@ -25,6 +25,10 @@ type Bookmarks struct {
 	Style string `yaml:"style"`
 }
 
+func init() {
+	Register("bookmarks", func() Widget { return &Bookmarks{} })
+}
+
 func (widget *Bookmarks) Initialize() error {
 	widget.withTitle("Bookmarks").withError(nil)
 

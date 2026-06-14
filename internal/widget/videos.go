@@ -22,6 +22,10 @@ type Videos struct {
 	IncludeShorts    bool        `yaml:"include-shorts"`
 }
 
+func init() {
+	Register("videos", func() Widget { return &Videos{} })
+}
+
 func (widget *Videos) Initialize() error {
 	widget.withTitle("Videos").withCacheDuration(time.Hour)
 
@@ -32,7 +36,7 @@ func (widget *Videos) Initialize() error {
 	return nil
 }
 
-func (widget *Videos) Update(ctx context.Context) {
+func (widget *Videos) Update(ctx context.Context, services ExternalServiceProvider) {
 	videos, err := feed.FetchYoutubeChannelUploads(widget.Channels, widget.VideoUrlTemplate)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {

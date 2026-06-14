@@ -18,6 +18,10 @@ type CustomAPI struct {
 	parsedTempl *template.Template `yaml:"-"`
 }
 
+func init() {
+	Register("custom-api", func() Widget { return &CustomAPI{} })
+}
+
 func (widget *CustomAPI) Initialize() error {
 	widget.withTitle("Custom API").withCacheDuration(time.Minute)
 
@@ -32,7 +36,7 @@ func (widget *CustomAPI) Initialize() error {
 	return nil
 }
 
-func (widget *CustomAPI) Update(ctx context.Context) {
+func (widget *CustomAPI) Update(ctx context.Context, services ExternalServiceProvider) {
 	if widget.parsedTempl == nil {
 		widget.withError(fmt.Errorf("template not compiled"))
 		return

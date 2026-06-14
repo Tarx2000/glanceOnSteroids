@@ -45,6 +45,10 @@ type Calendar struct {
 	Authorized    bool       `yaml:"-"`
 }
 
+func init() {
+	Register("calendar", func() Widget { return &Calendar{} })
+}
+
 func (widget *Calendar) Initialize() error {
 	widget.withTitle("Calendar").withCacheDuration(10 * time.Minute)
 
@@ -61,10 +65,10 @@ func (widget *Calendar) Initialize() error {
 	return nil
 }
 
-func (widget *Calendar) Update(ctx context.Context) {
+func (widget *Calendar) Update(ctx context.Context, services ExternalServiceProvider) {
 	authorized := false
-	if Services != nil {
-		authorized = Services.GoogleAuthorized()
+	if services != nil {
+		authorized = services.GoogleAuthorized()
 	}
 
 	widget.Lock()
@@ -79,8 +83,8 @@ func (widget *Calendar) Update(ctx context.Context) {
 		return
 	}
 
-	if Services != nil {
-		rawEvents, err := Services.FetchGoogleEvents(ctx, widget.Calendars, widget.MaxDaysAhead)
+	if services != nil {
+		rawEvents, err := services.FetchGoogleEvents(ctx, widget.Calendars, widget.MaxDaysAhead)
 		if err != nil {
 			widget.withError(err).scheduleEarlyUpdate()
 			return

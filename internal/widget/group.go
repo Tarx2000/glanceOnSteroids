@@ -14,6 +14,10 @@ type Group struct {
 	Widgets    Widgets `yaml:"widgets"`
 }
 
+func init() {
+	Register("group", func() Widget { return &Group{} })
+}
+
 func (g *Group) Initialize() error {
 	// Group does not have its own cache duration and is driven by nested widget update checks
 	g.withTitle("Group").withCacheDuration(-1)
@@ -25,7 +29,7 @@ func (g *Group) Initialize() error {
 	return nil
 }
 
-func (g *Group) Update(ctx context.Context) {
+func (g *Group) Update(ctx context.Context, services ExternalServiceProvider) {
 	now := time.Now()
 	var wg sync.WaitGroup
 	for i := range g.Widgets {
@@ -34,7 +38,7 @@ func (g *Group) Update(ctx context.Context) {
 			wg.Add(1)
 			go func(wd Widget) {
 				defer wg.Done()
-				wd.Update(ctx)
+				wd.Update(ctx, services)
 			}(w)
 		}
 	}

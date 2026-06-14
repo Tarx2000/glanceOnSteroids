@@ -19,6 +19,10 @@ type Repository struct {
 	RepositoryDetails   feed.RepositoryDetails
 }
 
+func init() {
+	Register("repository", func() Widget { return &Repository{} })
+}
+
 func (widget *Repository) Initialize() error {
 	widget.withTitle("Repository").withCacheDuration(1 * time.Hour)
 
@@ -33,7 +37,7 @@ func (widget *Repository) Initialize() error {
 	return nil
 }
 
-func (widget *Repository) Update(ctx context.Context) {
+func (widget *Repository) Update(ctx context.Context, services ExternalServiceProvider) {
 	details, err := feed.FetchRepositoryDetailsFromGithub(
 		widget.RequestedRepository,
 		string(widget.Token),

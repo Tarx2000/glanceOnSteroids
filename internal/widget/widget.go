@@ -28,54 +28,18 @@ type ExternalServiceProvider interface {
 	FetchGoogleEvents(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]GoogleCalendarEvent, error)
 }
 
-// Services holds the concrete implementation of ExternalServiceProvider.
-var Services ExternalServiceProvider
+var registry = make(map[string]func() Widget)
+
+func Register(widgetType string, factory func() Widget) {
+	registry[widgetType] = factory
+}
 
 func New(widgetType string) (Widget, error) {
-	switch widgetType {
-	case "calendar":
-		return &Calendar{}, nil
-	case "weather":
-		return &Weather{}, nil
-	case "clock":
-		return &Clock{}, nil
-	case "bookmarks":
-		return &Bookmarks{}, nil
-	case "iframe":
-		return &IFrame{}, nil
-	case "hacker-news":
-		return &HackerNews{}, nil
-	case "releases":
-		return &Releases{}, nil
-	case "videos":
-		return &Videos{}, nil
-	case "stocks", "markets":
-		return &Stocks{}, nil
-	case "custom-api":
-		return &CustomAPI{}, nil
-	case "group":
-		return &Group{}, nil
-	case "reddit":
-		return &Reddit{}, nil
-	case "rss":
-		return &RSS{}, nil
-	case "monitor":
-		return &Monitor{}, nil
-	case "twitch-top-games":
-		return &TwitchGames{}, nil
-	case "twitch-channels":
-		return &TwitchChannels{}, nil
-	case "repository":
-		return &Repository{}, nil
-	case "spotify":
-		return &Spotify{}, nil
-	case "neuralwatt":
-		return &NeuralWatt{}, nil
-	case "server-stats":
-		return &ServerStats{}, nil
-	default:
+	factory, ok := registry[widgetType]
+	if !ok {
 		return nil, fmt.Errorf("unknown widget type: %s", widgetType)
 	}
+	return factory(), nil
 }
 
 type Widgets []Widget
@@ -119,9 +83,14 @@ func (w *Widgets) UnmarshalYAML(node *yaml.Node) error {
 type Widget interface {
 	Initialize() error
 	RequiresUpdate(*time.Time) bool
-	Update(context.Context)
+	Update(context.Context, ExternalServiceProvider)
 	Render() template.HTML
 	GetType() string
+}
+
+type StatefulWidget interface {
+	Widget
+	CopyStateFrom(other Widget)
 }
 
 type cacheType int
@@ -188,7 +157,7 @@ func (w *widgetBase) RequiresUpdate(now *time.Time) bool {
 	return now.After(w.NextUpdate)
 }
 
-func (w *widgetBase) Update(ctx context.Context) {
+func (w *widgetBase) Update(ctx context.Context, services ExternalServiceProvider) {
 
 }
 
@@ -456,20 +425,8 @@ func CopyWidgetState(src, dst Widget) {
 		}
 	}
 
-	// Special case for Monitor widget Sites statuses since they are nested in struct slice
-	if srcMon, ok := src.(*Monitor); ok {
-		if dstMon, ok := dst.(*Monitor); ok {
-			for i := range dstMon.Sites {
-				for j := range srcMon.Sites {
-					if dstMon.Sites[i].Url == srcMon.Sites[j].Url {
-						dstMon.Sites[i].Status = srcMon.Sites[j].Status
-						dstMon.Sites[i].StatusText = srcMon.Sites[j].StatusText
-						dstMon.Sites[i].StatusStyle = srcMon.Sites[j].StatusStyle
-						break
-					}
-				}
-			}
-		}
+	if swDst, ok := dst.(StatefulWidget); ok {
+		swDst.CopyStateFrom(src)
 	}
 }
 

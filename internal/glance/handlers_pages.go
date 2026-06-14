@@ -23,7 +23,7 @@ func (a *Application) HandlePageRequest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Trigger asynchronous background pre-fetch
-	go page.UpdateOutdatedWidgets()
+	go page.UpdateOutdatedWidgets(a.Hub)
 
 	pageData := templateData{
 		Page: page,
@@ -57,7 +57,7 @@ func (a *Application) HandlePageContentRequest(w http.ResponseWriter, r *http.Re
 	}
 
 	// Trigger asynchronous background pre-fetch
-	go page.UpdateOutdatedWidgets()
+	go page.UpdateOutdatedWidgets(a.Hub)
 
 	pageData := templateData{
 		Page: page,
@@ -170,7 +170,7 @@ func (a *Application) HandleConfigImport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	InitSpotify(a.Config.Spotify.ClientID, a.Config.Spotify.ClientSecret, a.Config.Spotify.RedirectURL)
+
 
 	slog.Info("Config imported successfully", "filename", header.Filename)
 	w.WriteHeader(http.StatusOK)

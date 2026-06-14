@@ -7,9 +7,14 @@ import (
 	"github.com/glanceapp/glance/internal/assets"
 )
 
+func init() {
+	Register("spotify", func() Widget { return &Spotify{} })
+}
+
 // Spotify represents the Spotify player widget on the dashboard.
 type Spotify struct {
 	widgetBase `yaml:",inline"`
+	Authorized bool `yaml:"-"`
 }
 
 // Initialize configures the widget's title and update behavior.
@@ -19,8 +24,9 @@ func (widget *Spotify) Initialize() error {
 }
 
 // Update prepares the widget data (nothing to fetch synchronously).
-func (widget *Spotify) Update(ctx context.Context) {
+func (widget *Spotify) Update(ctx context.Context, services ExternalServiceProvider) {
 	widget.Lock()
+	widget.Authorized = services.SpotifyAuthorized()
 	widget.ContentAvailable = true
 	widget.Unlock()
 }
@@ -32,8 +38,7 @@ func (widget *Spotify) Render() template.HTML {
 
 // IsAuthorized returns true if the Spotify account is connected/authorized.
 func (widget *Spotify) IsAuthorized() bool {
-	if Services != nil {
-		return Services.SpotifyAuthorized()
-	}
-	return false
+	widget.Lock()
+	defer widget.Unlock()
+	return widget.Authorized
 }

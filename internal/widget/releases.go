@@ -20,6 +20,10 @@ type Releases struct {
 	CollapseAfter   int               `yaml:"collapse-after"`
 }
 
+func init() {
+	Register("releases", func() Widget { return &Releases{} })
+}
+
 func (widget *Releases) Initialize() error {
 	widget.withTitle("Releases").withCacheDuration(2 * time.Hour)
 
@@ -34,7 +38,7 @@ func (widget *Releases) Initialize() error {
 	return nil
 }
 
-func (widget *Releases) Update(ctx context.Context) {
+func (widget *Releases) Update(ctx context.Context, services ExternalServiceProvider) {
 	releases, err := feed.FetchLatestReleasesFromGithub(widget.Repositories, string(widget.Token))
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {

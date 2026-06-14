@@ -71,8 +71,6 @@ func (a *Application) HandleSettingsSave(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Hot reload credentials
-	InitSpotify(a.Config.Spotify.ClientID, a.Config.Spotify.ClientSecret, a.Config.Spotify.RedirectURL)
-
 	w.WriteHeader(http.StatusOK)
 }
 

@@ -57,13 +57,17 @@ type Monitor struct {
 	Style string `yaml:"style"`
 }
 
+func init() {
+	Register("monitor", func() Widget { return &Monitor{} })
+}
+
 func (widget *Monitor) Initialize() error {
 	widget.withTitle("Monitor").withCacheDuration(5 * time.Minute)
 
 	return nil
 }
 
-func (widget *Monitor) Update(ctx context.Context) {
+func (widget *Monitor) Update(ctx context.Context, services ExternalServiceProvider) {
 	requests := make([]*http.Request, len(widget.Sites))
 
 	for i := range widget.Sites {
@@ -101,4 +105,19 @@ func (widget *Monitor) Update(ctx context.Context) {
 
 func (widget *Monitor) Render() template.HTML {
 	return widget.render(widget, assets.MonitorTemplate)
+}
+
+func (widget *Monitor) CopyStateFrom(other Widget) {
+	if srcMon, ok := other.(*Monitor); ok {
+		for i := range widget.Sites {
+			for j := range srcMon.Sites {
+				if widget.Sites[i].Url == srcMon.Sites[j].Url {
+					widget.Sites[i].Status = srcMon.Sites[j].Status
+					widget.Sites[i].StatusText = srcMon.Sites[j].StatusText
+					widget.Sites[i].StatusStyle = srcMon.Sites[j].StatusStyle
+					break
+				}
+			}
+		}
+	}
 }

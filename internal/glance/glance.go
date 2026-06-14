@@ -40,6 +40,9 @@ type Application struct {
 	configMu      sync.RWMutex
 	configFileMu  sync.Mutex
 	ConfigManager *ConfigManager
+	Hub           *Hub
+	SpotifyPoller *SpotifyPoller
+	ctxCancel     context.CancelFunc
 }
 
 // Theme defines application-wide styling properties.
@@ -91,7 +94,7 @@ type Page struct {
 }
 
 // UpdateOutdatedWidgets processes updates for outdated widgets concurrently.
-func (p *Page) UpdateOutdatedWidgets() bool {
+func (p *Page) UpdateOutdatedWidgets(hub *Hub) bool {
 	p.mu.Lock()
 	if p.isUpdating {
 		p.mu.Unlock()
@@ -144,7 +147,7 @@ func (p *Page) UpdateOutdatedWidgets() bool {
 					}
 					close(done)
 				}()
-				wd.Update(widgetCtx)
+				wd.Update(widgetCtx, &glanceServiceProvider{})
 			}()
 			
 			select {
@@ -155,7 +158,7 @@ func (p *Page) UpdateOutdatedWidgets() bool {
 			}
 			
 			// Broadcast update for this specific widget immediately!
-			BroadcastMessage("widget_update", map[string]interface{}{
+			hub.BroadcastMessage("widget_update", map[string]interface{}{
 				"page":       p.Slug,
 				"col":        col,
 				"idx":        idx,
@@ -223,6 +226,9 @@ func NewApplication(config *Config, configPath string) (*Application, error) {
 		slugToPage:  make(map[string]*Page),
 	}
 
+	app.Hub = NewHub()
+	app.SpotifyPoller = NewSpotifyPoller(config.Spotify, app.Hub.ActiveConnections, app.Hub.BroadcastMessage)
+
 	app.ConfigManager = NewConfigManager(configPath, &app.configFileMu, app.reloadConfig)
 
 	app.slugToPage[""] = &config.Pages[0]
@@ -258,7 +264,7 @@ func (a *Application) Serve() error {
 	mux.Handle("GET /static/{path...}", http.StripPrefix("/static/", FileServerWithCache(http.FS(assets.PublicFS), 2*time.Hour)))
 
 	// Register WebSocket endpoint
-	mux.HandleFunc("GET /api/ws", handleWebSocket)
+	mux.HandleFunc("GET /api/ws", a.handleWebSocket)
 
 	// Spotify Auth routes
 	mux.HandleFunc("GET /api/spotify/login", a.HandleSpotifyLogin)
@@ -319,12 +325,24 @@ func (a *Application) Serve() error {
 
 	slog.Info("Starting server", "host", a.Config.Server.Host, "port", a.Config.Server.Port)
 	
+	// Create context for background services
+	ctx, cancel := context.WithCancel(context.Background())
+	a.ctxCancel = cancel
+
+	// Start WebSocket Hub loop
+	go a.Hub.Run()
+
+	// Start Spotify Poller loop
+	if a.SpotifyPoller != nil {
+		go a.SpotifyPoller.Run(ctx)
+	}
+
 	// Pre-warm caches for all pages in the background upon startup
 	go func() {
 		for i := range a.Config.Pages {
 			page := &a.Config.Pages[i]
 			slog.Info("Pre-warming widget cache for page", "page", page.Title)
-			if updated := page.UpdateOutdatedWidgets(); !updated {
+			if updated := page.UpdateOutdatedWidgets(a.Hub); !updated {
 				slog.Info("Pre-warm completed for page (no updates needed)", "page", page.Title)
 			} else {
 				slog.Info("Pre-warm completed for page", "page", page.Title)
@@ -337,22 +355,27 @@ func (a *Application) Serve() error {
 	go func() {
 		ticker := time.NewTicker(BackgroundWidgetUpdateInterval)
 		defer ticker.Stop()
-		for range ticker.C {
-			activePages := ActivePages()
-			if len(activePages) == 0 {
-				continue // Nobody is online, skip background updates entirely
-			}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				activePages := a.Hub.ActivePages()
+				if len(activePages) == 0 {
+					continue // Nobody is online, skip background updates entirely
+				}
 
-			a.configMu.RLock()
-			pages := make([]*Page, len(a.Config.Pages))
-			for i := range a.Config.Pages {
-				pages[i] = &a.Config.Pages[i]
-			}
-			a.configMu.RUnlock()
+				a.configMu.RLock()
+				pages := make([]*Page, len(a.Config.Pages))
+				for i := range a.Config.Pages {
+					pages[i] = &a.Config.Pages[i]
+				}
+				a.configMu.RUnlock()
 
-			for _, page := range pages {
-				if activePages[page.Slug] {
-					page.UpdateOutdatedWidgets()
+				for _, page := range pages {
+					if activePages[page.Slug] {
+						page.UpdateOutdatedWidgets(a.Hub)
+					}
 				}
 			}
 		}
@@ -440,13 +463,19 @@ func (a *Application) reloadConfig() error {
 	a.configMu.Lock()
 	a.Config = *config
 	a.slugToPage = newSlugToPage
+	// Update SpotifyPoller config
+	if a.SpotifyPoller != nil {
+		a.SpotifyPoller.mu.Lock()
+		a.SpotifyPoller.config = config.Spotify
+		a.SpotifyPoller.mu.Unlock()
+	}
 	a.configMu.Unlock()
 
 	widget.GlobalTimezone = config.Server.Timezone
 
 	for i := range config.Pages {
 		page := &config.Pages[i]
-		page.UpdateOutdatedWidgets()
+		page.UpdateOutdatedWidgets(a.Hub)
 	}
 
 	return nil

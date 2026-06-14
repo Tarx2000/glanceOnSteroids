@@ -43,6 +43,10 @@ type NeuralWatt struct {
 	NoticeMessage      string                   `yaml:"-"`
 }
 
+func init() {
+	Register("neuralwatt", func() Widget { return &NeuralWatt{} })
+}
+
 // Configurable pricing parameters (USD per 1,000,000 tokens)
 // These variables allow customization of LLM API costs for input and output tokens.
 var (
@@ -74,7 +78,7 @@ func (widget *NeuralWatt) Initialize() error {
 // Update retrieves the summary and energy data from the NeuralWatt service,
 // processes it using local variables, and updates the widget state under a mutex lock
 // to prevent concurrent data access races.
-func (widget *NeuralWatt) Update(ctx context.Context) {
+func (widget *NeuralWatt) Update(ctx context.Context, services ExternalServiceProvider) {
 	apiKey := string(widget.ApiKey)
 
 	summary, err := feed.FetchNeuralWattSummary(apiKey)

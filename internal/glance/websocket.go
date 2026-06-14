@@ -31,25 +31,27 @@ type Hub struct {
 	mu         sync.Mutex
 }
 
-var globalHub = Hub{
-	clients:    make(map[*Client]bool),
-	register:   make(chan *Client),
-	unregister: make(chan *Client),
+func NewHub() *Hub {
+	return &Hub{
+		clients:    make(map[*Client]bool),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+	}
 }
 
 // ActiveConnections returns the number of currently connected WebSocket clients.
-func ActiveConnections() int {
-	globalHub.mu.Lock()
-	defer globalHub.mu.Unlock()
-	return len(globalHub.clients)
+func (h *Hub) ActiveConnections() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.clients)
 }
 
 // ActivePages returns a map of page slugs currently being viewed by connected clients.
-func ActivePages() map[string]bool {
-	globalHub.mu.Lock()
-	defer globalHub.mu.Unlock()
+func (h *Hub) ActivePages() map[string]bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	pages := make(map[string]bool)
-	for client := range globalHub.clients {
+	for client := range h.clients {
 		if client.page != "" {
 			pages[client.page] = true
 		}
@@ -57,7 +59,7 @@ func ActivePages() map[string]bool {
 	return pages
 }
 
-func (h *Hub) run() {
+func (h *Hub) Run() {
 	for {
 		select {
 		case client := <-h.register:
@@ -65,9 +67,6 @@ func (h *Hub) run() {
 			h.clients[client] = true
 			h.mu.Unlock()
 			log.Println("[WS] Client connected")
-
-			// Push initial state to the client immediately after connection
-			go triggerInitialSpotifyPush()
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -82,7 +81,7 @@ func (h *Hub) run() {
 }
 
 // BroadcastMessage sends a JSON-wrapped message to all active WebSocket clients.
-func BroadcastMessage(msgType string, data interface{}) {
+func (h *Hub) BroadcastMessage(msgType string, data interface{}) {
 	payload := map[string]interface{}{
 		"type": msgType,
 		"data": data,
@@ -94,9 +93,9 @@ func BroadcastMessage(msgType string, data interface{}) {
 		return
 	}
 
-	globalHub.mu.Lock()
+	h.mu.Lock()
 	var failed []*Client
-	for client := range globalHub.clients {
+	for client := range h.clients {
 		err := client.conn.WriteMessage(websocket.TextMessage, msgBytes)
 		if err != nil {
 			log.Printf("[WS] Error writing to socket: %v", err)
@@ -105,30 +104,12 @@ func BroadcastMessage(msgType string, data interface{}) {
 		}
 	}
 	for _, c := range failed {
-		delete(globalHub.clients, c)
+		delete(h.clients, c)
 	}
-	globalHub.mu.Unlock()
+	h.mu.Unlock()
 }
 
-type SpotifyEvent struct {
-	Type string
-	Data interface{}
-}
-
-var SpotifyEventChan = make(chan SpotifyEvent, 100)
-
-func initWebSocket() {
-	go globalHub.run()
-
-	// Listen for Spotify events and broadcast them to connected WebSocket clients.
-	go func() {
-		for event := range SpotifyEventChan {
-			BroadcastMessage(event.Type, event.Data)
-		}
-	}()
-}
-
-func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+func (a *Application) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("[WS] Upgrade failed: %v", err)
@@ -136,7 +117,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	pageSlug := r.URL.Query().Get("page")
 	client := &Client{conn: conn, page: pageSlug}
-	globalHub.register <- client
+	a.Hub.register <- client
+
+	// Trigger initial Spotify push via poller
+	if a.SpotifyPoller != nil {
+		go a.SpotifyPoller.TriggerInitialPush()
+	}
 
 	// Set reasonable read deadline and pong handler to detect stale clients
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -162,7 +148,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Read loop to detect disconnects and handle client updates
 	go func() {
 		defer func() {
-			globalHub.unregister <- client
+			a.Hub.unregister <- client
 		}()
 		for {
 			_, msgBytes, err := conn.ReadMessage()
@@ -175,9 +161,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			if err := json.Unmarshal(msgBytes, &msg); err == nil {
 				if msg.Type == "active_page" && msg.Page != "" {
-					globalHub.mu.Lock()
+					a.Hub.mu.Lock()
 					client.page = msg.Page
-					globalHub.mu.Unlock()
+					a.Hub.mu.Unlock()
 				}
 			}
 		}

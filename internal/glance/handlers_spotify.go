@@ -15,16 +15,16 @@ import (
 
 // HandleSpotifyLogin initiates the Spotify OAuth login sequence.
 func (a *Application) HandleSpotifyLogin(w http.ResponseWriter, r *http.Request) {
-	if spotifyConfig.ClientID == "" {
+	if a.SpotifyPoller == nil || a.SpotifyPoller.config.ClientID == "" {
 		http.Error(w, "Spotify Client ID is not configured. Add it under the spotify: block in glance.yml or as SPOTIFY_CLIENT_ID environment variable.", http.StatusInternalServerError)
 		return
 	}
 
-	redirectURI := getSpotifyRedirectURI(r)
-	slog.Info("[Spotify] Initiating OAuth login", "redirect_uri", redirectURI, "configured_url", spotifyConfig.RedirectURL, "request_host", r.Host)
+	redirectURI := a.SpotifyPoller.getSpotifyRedirectURI(r)
+	slog.Info("[Spotify] Initiating OAuth login", "redirect_uri", redirectURI, "configured_url", a.SpotifyPoller.config.RedirectURL, "request_host", r.Host)
 	scopes := "user-read-playback-state user-modify-playback-state"
 	authURL := fmt.Sprintf("https://accounts.spotify.com/authorize?response_type=code&client_id=%s&scope=%s&redirect_uri=%s",
-		url.QueryEscape(spotifyConfig.ClientID),
+		url.QueryEscape(a.SpotifyPoller.config.ClientID),
 		url.QueryEscape(scopes),
 		url.QueryEscape(redirectURI),
 	)
@@ -39,8 +39,13 @@ func (a *Application) HandleSpotifyCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	redirectURI := getSpotifyRedirectURI(r)
-	slog.Info("[Spotify] Callback received", "redirect_uri", redirectURI, "configured_url", spotifyConfig.RedirectURL)
+	if a.SpotifyPoller == nil {
+		http.Error(w, "Spotify poller not initialized", http.StatusInternalServerError)
+		return
+	}
+
+	redirectURI := a.SpotifyPoller.getSpotifyRedirectURI(r)
+	slog.Info("[Spotify] Callback received", "redirect_uri", redirectURI, "configured_url", a.SpotifyPoller.config.RedirectURL)
 	data := url.Values{}
 	data.Set("grant_type", "authorization_code")
 	data.Set("code", code)
@@ -52,7 +57,7 @@ func (a *Application) HandleSpotifyCallback(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	auth := base64.StdEncoding.EncodeToString([]byte(spotifyConfig.ClientID + ":" + spotifyConfig.ClientSecret))
+	auth := base64.StdEncoding.EncodeToString([]byte(a.SpotifyPoller.config.ClientID + ":" + a.SpotifyPoller.config.ClientSecret))
 	req.Header.Set("Authorization", "Basic "+auth)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -103,41 +108,57 @@ func (a *Application) HandleSpotifyCallback(w http.ResponseWriter, r *http.Reque
 
 // HandleSpotifyPlay sends the playback resume command.
 func (a *Application) HandleSpotifyPlay(w http.ResponseWriter, r *http.Request) {
-	if err := spotifyControlAction("PUT", "play", nil); err != nil {
+	if a.SpotifyPoller == nil {
+		http.Error(w, "Spotify poller not initialized", http.StatusInternalServerError)
+		return
+	}
+	if err := a.SpotifyPoller.spotifyControlAction("PUT", "play", nil); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	TriggerImmediateSpotifyBroadcast()
+	a.SpotifyPoller.TriggerImmediateBroadcast()
 	w.WriteHeader(http.StatusOK)
 }
 
 // HandleSpotifyPause sends the playback resume command.
 func (a *Application) HandleSpotifyPause(w http.ResponseWriter, r *http.Request) {
-	if err := spotifyControlAction("PUT", "pause", nil); err != nil {
+	if a.SpotifyPoller == nil {
+		http.Error(w, "Spotify poller not initialized", http.StatusInternalServerError)
+		return
+	}
+	if err := a.SpotifyPoller.spotifyControlAction("PUT", "pause", nil); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	TriggerImmediateSpotifyBroadcast()
+	a.SpotifyPoller.TriggerImmediateBroadcast()
 	w.WriteHeader(http.StatusOK)
 }
 
 // HandleSpotifySkip skips to the next or previous track.
 func (a *Application) HandleSpotifySkip(w http.ResponseWriter, r *http.Request) {
+	if a.SpotifyPoller == nil {
+		http.Error(w, "Spotify poller not initialized", http.StatusInternalServerError)
+		return
+	}
 	direction := r.URL.Query().Get("direction")
 	action := "next"
 	if direction == "prev" {
 		action = "previous"
 	}
-	if err := spotifyControlAction("POST", action, nil); err != nil {
+	if err := a.SpotifyPoller.spotifyControlAction("POST", action, nil); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	TriggerImmediateSpotifyBroadcast()
+	a.SpotifyPoller.TriggerImmediateBroadcast()
 	w.WriteHeader(http.StatusOK)
 }
 
 // HandleSpotifyVolume sets the active player device volume percent.
 func (a *Application) HandleSpotifyVolume(w http.ResponseWriter, r *http.Request) {
+	if a.SpotifyPoller == nil {
+		http.Error(w, "Spotify poller not initialized", http.StatusInternalServerError)
+		return
+	}
 	volumeStr := r.URL.Query().Get("volume")
 	volume, err := strconv.Atoi(volumeStr)
 	if err != nil || volume < 0 || volume > 100 {
@@ -145,10 +166,10 @@ func (a *Application) HandleSpotifyVolume(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := spotifyControlAction("PUT", fmt.Sprintf("volume?volume_percent=%d", volume), nil); err != nil {
+	if err := a.SpotifyPoller.spotifyControlAction("PUT", fmt.Sprintf("volume?volume_percent=%d", volume), nil); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	TriggerImmediateSpotifyBroadcast()
+	a.SpotifyPoller.TriggerImmediateBroadcast()
 	w.WriteHeader(http.StatusOK)
 }

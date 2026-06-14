@@ -39,13 +39,17 @@ type ServerStats struct {
 	UptimeDays    int     `yaml:"-"`
 }
 
+func init() {
+	Register("server-stats", func() Widget { return &ServerStats{} })
+}
+
 func (widget *ServerStats) Initialize() error {
 	widget.withTitle("Server Stats")
 	widget.withCacheDuration(30 * time.Second)
 	return nil
 }
 
-func (widget *ServerStats) Update(ctx context.Context) {
+func (widget *ServerStats) Update(ctx context.Context, services ExternalServiceProvider) {
 	widget.readCPU()
 	widget.readRAM()
 	widget.readDisk()

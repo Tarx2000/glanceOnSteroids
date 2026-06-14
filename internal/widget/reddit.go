@@ -29,6 +29,10 @@ type Reddit struct {
 	Proxy               string          `yaml:"proxy"`
 }
 
+func init() {
+	Register("reddit", func() Widget { return &Reddit{} })
+}
+
 func (widget *Reddit) Initialize() error {
 	if widget.Subreddit == "" {
 		return errors.New("no subreddit specified")
@@ -77,7 +81,7 @@ func isValidRedditTopPeriod(period string) bool {
 		period == "all"
 }
 
-func (widget *Reddit) Update(ctx context.Context) {
+func (widget *Reddit) Update(ctx context.Context, services ExternalServiceProvider) {
 	// TODO: refactor, use a struct to pass all of these
 	posts, err := feed.FetchSubredditPosts(
 		widget.Subreddit,

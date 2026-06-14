@@ -13,6 +13,10 @@ type Clock struct {
 	HourFormat string `yaml:"hour-format"`
 }
 
+func init() {
+	Register("clock", func() Widget { return &Clock{} })
+}
+
 func (widget *Clock) Initialize() error {
 	widget.withTitle("Clock").withCacheDuration(-1) // Updates client-side
 	if widget.HourFormat == "" {
@@ -21,7 +25,7 @@ func (widget *Clock) Initialize() error {
 	return nil
 }
 
-func (widget *Clock) Update(ctx context.Context) {
+func (widget *Clock) Update(ctx context.Context, services ExternalServiceProvider) {
 	// No-op (handled client-side)
 }
 

@@ -17,6 +17,10 @@ type TwitchGames struct {
 	CollapseAfter int                   `yaml:"collapse-after"`
 }
 
+func init() {
+	Register("twitch-top-games", func() Widget { return &TwitchGames{} })
+}
+
 func (widget *TwitchGames) Initialize() error {
 	widget.withTitle("Top games on Twitch").withCacheDuration(time.Minute * 10)
 
@@ -31,7 +35,7 @@ func (widget *TwitchGames) Initialize() error {
 	return nil
 }
 
-func (widget *TwitchGames) Update(ctx context.Context) {
+func (widget *TwitchGames) Update(ctx context.Context, services ExternalServiceProvider) {
 	categories, err := feed.FetchTopGamesFromTwitch(widget.Exclude, widget.Limit)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {

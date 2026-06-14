@@ -1,6 +1,7 @@
 package glance
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -15,26 +16,39 @@ import (
 	"time"
 )
 
-var (
-	spotifyConfig   SpotifyConfig
-	spotifyStateMu  sync.Mutex
-	lastTrackID     string
-	lastIsPlaying   bool
-	lastProgressMS  int
-	lastVolume      int
+type SpotifyPoller struct {
+	config           SpotifyConfig
+	mu               sync.Mutex
+	lastTrackID      string
+	lastIsPlaying    bool
+	lastProgressMS   int
+	lastVolume       int
 	lastSpotifyError string
-	spotifyPoller   sync.Once
+	activeCheck      func() int
+	broadcast        func(msgType string, data interface{})
+}
 
-	// ActiveConnectionsCheck callback returns the number of active WebSocket connections.
-	// Wired dynamically from main server initialization to avoid circular package imports.
-	ActiveConnectionsCheck func() int
-)
+func NewSpotifyPoller(config SpotifyConfig, activeCheck func() int, broadcast func(msgType string, data interface{})) *SpotifyPoller {
+	if config.ClientID == "" {
+		config.ClientID = os.Getenv("SPOTIFY_CLIENT_ID")
+	}
+	if config.ClientSecret == "" {
+		config.ClientSecret = os.Getenv("SPOTIFY_CLIENT_SECRET")
+	}
+	if config.RedirectURL == "" {
+		config.RedirectURL = os.Getenv("SPOTIFY_REDIRECT_URL")
+	}
 
-func publishSpotifyEvent(msgType string, data interface{}) {
-	select {
-	case SpotifyEventChan <- SpotifyEvent{Type: msgType, Data: data}:
-	default:
-		log.Printf("[Spotify] Event channel full, dropping event: %s", msgType)
+	if config.ClientID != "" {
+		log.Println("[Spotify] Configured Client ID successfully.")
+	} else {
+		log.Println("[Spotify] Warning: Client ID is empty. Spotify widget will need SPOTIFY_CLIENT_ID configured in glance.yml or env.")
+	}
+
+	return &SpotifyPoller{
+		config:      config,
+		activeCheck: activeCheck,
+		broadcast:   broadcast,
 	}
 }
 
@@ -51,41 +65,18 @@ type SpotifyTrack struct {
 	Volume    int    `json:"volume"`
 }
 
-// InitSpotify configures the Spotify client credentials and redirect URI.
-func InitSpotify(clientID, clientSecret, redirectURL string) {
-	spotifyConfig.ClientID = clientID
-	spotifyConfig.ClientSecret = clientSecret
-	spotifyConfig.RedirectURL = redirectURL
-
-	if spotifyConfig.ClientID == "" {
-		spotifyConfig.ClientID = os.Getenv("SPOTIFY_CLIENT_ID")
-	}
-	if spotifyConfig.ClientSecret == "" {
-		spotifyConfig.ClientSecret = os.Getenv("SPOTIFY_CLIENT_SECRET")
-	}
-	if spotifyConfig.RedirectURL == "" {
-		spotifyConfig.RedirectURL = os.Getenv("SPOTIFY_REDIRECT_URL")
-	}
-
-	if spotifyConfig.ClientID != "" {
-		log.Println("[Spotify] Configured Client ID successfully.")
-	} else {
-		log.Println("[Spotify] Warning: Client ID is empty. Spotify widget will need SPOTIFY_CLIENT_ID configured in glance.yml or env.")
-	}
-}
-
-// triggerInitialSpotifyPush broadcasts the initial playback state to a newly connected client.
-func triggerInitialSpotifyPush() {
+// TriggerInitialPush broadcasts the initial playback state to a newly connected client.
+func (sp *SpotifyPoller) TriggerInitialPush() {
 	time.Sleep(300 * time.Millisecond) // wait for websocket to fully open
-	status, err := getSpotifyPlaybackStatus()
+	status, err := sp.getSpotifyPlaybackStatus()
 	if err != nil {
 		errMsg := err.Error()
-		spotifyStateMu.Lock()
-		lastSpotifyError = errMsg
-		spotifyStateMu.Unlock()
+		sp.mu.Lock()
+		sp.lastSpotifyError = errMsg
+		sp.mu.Unlock()
 		log.Printf("[Spotify] Initial push failed: %v", err)
 		auth, _ := Store.GetSetting("spotify_authorized", "false")
-		publishSpotifyEvent("spotify_update", map[string]interface{}{
+		sp.broadcast("spotify_update", map[string]interface{}{
 			"authorized": auth == "true",
 			"track":      nil,
 			"error":      errMsg,
@@ -93,91 +84,91 @@ func triggerInitialSpotifyPush() {
 		return
 	}
 
-	spotifyStateMu.Lock()
-	lastTrackID = status.ID
-	lastIsPlaying = status.IsPlaying
-	lastProgressMS = status.Progress
-	lastVolume = status.Volume
-	lastSpotifyError = ""
-	spotifyStateMu.Unlock()
+	sp.mu.Lock()
+	sp.lastTrackID = status.ID
+	sp.lastIsPlaying = status.IsPlaying
+	sp.lastProgressMS = status.Progress
+	sp.lastVolume = status.Volume
+	sp.lastSpotifyError = ""
+	sp.mu.Unlock()
 
 	log.Printf("[Spotify] Initial push: track=%q is_playing=%v", status.ID, status.IsPlaying)
-	publishSpotifyEvent("spotify_update", map[string]interface{}{
+	sp.broadcast("spotify_update", map[string]interface{}{
 		"authorized": true,
 		"track":      status,
 		"error":      "",
 	})
 }
 
-// StartSpotifyPoller starts the background loop that polls Spotify status and pushes it via WebSockets.
-// To optimize resources on low-spec hardware (like Fire HD tablets), polling is paused when no client is connected.
-func StartSpotifyPoller() {
-	spotifyPoller.Do(func() {
-		go func() {
-			log.Println("[Spotify] Background status poller started.")
-			for {
-				time.Sleep(2 * time.Second)
+// Run starts the background loop that polls Spotify status and pushes it via WebSockets.
+func (sp *SpotifyPoller) Run(ctx context.Context) {
+	log.Println("[Spotify] Background status poller started.")
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Skip polling if there are no active WebSocket connections
+			if sp.activeCheck != nil && sp.activeCheck() == 0 {
+				continue
+			}
 
-				// Skip polling if there are no active WebSocket connections
-				if ActiveConnectionsCheck != nil && ActiveConnectionsCheck() == 0 {
-					continue
-				}
+			auth, _ := Store.GetSetting("spotify_authorized", "false")
+			if auth != "true" {
+				continue
+			}
 
-				auth, _ := Store.GetSetting("spotify_authorized", "false")
-				if auth != "true" {
-					continue
+			status, err := sp.getSpotifyPlaybackStatus()
+			if err != nil {
+				errMsg := err.Error()
+				sp.mu.Lock()
+				changed := errMsg != sp.lastSpotifyError
+				if changed {
+					sp.lastSpotifyError = errMsg
 				}
-
-				status, err := getSpotifyPlaybackStatus()
-				if err != nil {
-					errMsg := err.Error()
-					spotifyStateMu.Lock()
-					changed := errMsg != lastSpotifyError
-					if changed {
-						lastSpotifyError = errMsg
-					}
-					spotifyStateMu.Unlock()
-
-					if changed {
-						log.Printf("[Spotify] Poller broadcast error: %v", errMsg)
-						publishSpotifyEvent("spotify_update", map[string]interface{}{
-							"authorized": true,
-							"track":      nil,
-							"error":      errMsg,
-						})
-					}
-					continue
-				}
-
-				spotifyStateMu.Lock()
-				changed := false
-				if lastSpotifyError != "" {
-					lastSpotifyError = ""
-					changed = true
-				}
-				if status.ID != lastTrackID ||
-					status.IsPlaying != lastIsPlaying ||
-					status.Volume != lastVolume ||
-					abs(status.Progress-lastProgressMS) > 5000 {
-					lastTrackID = status.ID
-					lastIsPlaying = status.IsPlaying
-					lastProgressMS = status.Progress
-					lastVolume = status.Volume
-					changed = true
-				}
-				spotifyStateMu.Unlock()
+				sp.mu.Unlock()
 
 				if changed {
-					log.Printf("[Spotify] Poller broadcast: track=%q is_playing=%v progress=%d duration=%d", status.ID, status.IsPlaying, status.Progress, status.Duration)
-					publishSpotifyEvent("spotify_update", map[string]interface{}{
+					log.Printf("[Spotify] Poller broadcast error: %v", errMsg)
+					sp.broadcast("spotify_update", map[string]interface{}{
 						"authorized": true,
-						"track":      status,
-						"error":      "",
+						"track":      nil,
+						"error":      errMsg,
 					})
 				}
+				continue
 			}
-		}()
-	})
+
+			sp.mu.Lock()
+			changed := false
+			if sp.lastSpotifyError != "" {
+				sp.lastSpotifyError = ""
+				changed = true
+			}
+			if status.ID != sp.lastTrackID ||
+				status.IsPlaying != sp.lastIsPlaying ||
+				status.Volume != sp.lastVolume ||
+				abs(status.Progress-sp.lastProgressMS) > 5000 {
+				sp.lastTrackID = status.ID
+				sp.lastIsPlaying = status.IsPlaying
+				sp.lastProgressMS = status.Progress
+				sp.lastVolume = status.Volume
+				changed = true
+			}
+			sp.mu.Unlock()
+
+			if changed {
+				log.Printf("[Spotify] Poller broadcast: track=%q is_playing=%v progress=%d duration=%d", status.ID, status.IsPlaying, status.Progress, status.Duration)
+				sp.broadcast("spotify_update", map[string]interface{}{
+					"authorized": true,
+					"track":      status,
+					"error":      "",
+				})
+			}
+		}
+	}
 }
 
 func abs(x int) int {
@@ -188,10 +179,9 @@ func abs(x int) int {
 }
 
 // getSpotifyRedirectURI resolves the redirect URI for the OAuth flow.
-// Priority: explicitly configured value > X-Forwarded-* headers > request Host header.
-func getSpotifyRedirectURI(r *http.Request) string {
-	if spotifyConfig.RedirectURL != "" {
-		return spotifyConfig.RedirectURL
+func (sp *SpotifyPoller) getSpotifyRedirectURI(r *http.Request) string {
+	if sp.config.RedirectURL != "" {
+		return sp.config.RedirectURL
 	}
 
 	scheme := "http"
@@ -208,8 +198,8 @@ func getSpotifyRedirectURI(r *http.Request) string {
 }
 
 // getSpotifyPlaybackStatus queries Spotify for the current active playback state.
-func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
-	token, err := getSpotifyAccessToken()
+func (sp *SpotifyPoller) getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
+	token, err := sp.getSpotifyAccessToken()
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +301,7 @@ func getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 }
 
 // getSpotifyAccessToken returns a valid access token, auto-refreshing it if needed.
-func getSpotifyAccessToken() (string, error) {
+func (sp *SpotifyPoller) getSpotifyAccessToken() (string, error) {
 	accessToken, _ := Store.GetSetting("spotify_access_token", "")
 	tokenExpiryStr, _ := Store.GetSetting("spotify_access_token_expiry", "")
 	
@@ -327,7 +317,7 @@ func getSpotifyAccessToken() (string, error) {
 		return "", fmt.Errorf("no refresh token available, user must re-authorize")
 	}
 
-	if spotifyConfig.ClientID == "" || spotifyConfig.ClientSecret == "" {
+	if sp.config.ClientID == "" || sp.config.ClientSecret == "" {
 		return "", fmt.Errorf("spotify credentials not configured")
 	}
 
@@ -340,7 +330,7 @@ func getSpotifyAccessToken() (string, error) {
 		return "", err
 	}
 
-	auth := base64.StdEncoding.EncodeToString([]byte(spotifyConfig.ClientID + ":" + spotifyConfig.ClientSecret))
+	auth := base64.StdEncoding.EncodeToString([]byte(sp.config.ClientID + ":" + sp.config.ClientSecret))
 	req.Header.Set("Authorization", "Basic "+auth)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -378,8 +368,8 @@ func getSpotifyAccessToken() (string, error) {
 }
 
 // spotifyControlAction helper sends volume or playback command to Spotify API.
-func spotifyControlAction(method, path string, body io.Reader) error {
-	token, err := getSpotifyAccessToken()
+func (sp *SpotifyPoller) spotifyControlAction(method, path string, body io.Reader) error {
+	token, err := sp.getSpotifyAccessToken()
 	if err != nil {
 		return err
 	}
@@ -416,7 +406,7 @@ func spotifyControlAction(method, path string, body io.Reader) error {
 // TriggerImmediateSpotifyBroadcast runs in a background goroutine, waiting for 250ms
 // before querying the current playback status and broadcasting it to all active clients.
 // This allows immediate visual feedback after play, pause, volume, or skip actions.
-func TriggerImmediateSpotifyBroadcast() {
+func (sp *SpotifyPoller) TriggerImmediateBroadcast() {
 	go func() {
 		// Wait a short duration to let the Spotify API update its state
 		time.Sleep(250 * time.Millisecond)
@@ -426,14 +416,14 @@ func TriggerImmediateSpotifyBroadcast() {
 			return
 		}
 
-		status, err := getSpotifyPlaybackStatus()
+		status, err := sp.getSpotifyPlaybackStatus()
 		if err != nil {
 			errMsg := err.Error()
-			spotifyStateMu.Lock()
-			lastSpotifyError = errMsg
-			spotifyStateMu.Unlock()
+			sp.mu.Lock()
+			sp.lastSpotifyError = errMsg
+			sp.mu.Unlock()
 			
-			publishSpotifyEvent("spotify_update", map[string]interface{}{
+			sp.broadcast("spotify_update", map[string]interface{}{
 				"authorized": true,
 				"track":      nil,
 				"error":      errMsg,
@@ -441,15 +431,15 @@ func TriggerImmediateSpotifyBroadcast() {
 			return
 		}
 
-		spotifyStateMu.Lock()
-		lastTrackID = status.ID
-		lastIsPlaying = status.IsPlaying
-		lastProgressMS = status.Progress
-		lastVolume = status.Volume
-		lastSpotifyError = ""
-		spotifyStateMu.Unlock()
+		sp.mu.Lock()
+		sp.lastTrackID = status.ID
+		sp.lastIsPlaying = status.IsPlaying
+		sp.lastProgressMS = status.Progress
+		sp.lastVolume = status.Volume
+		sp.lastSpotifyError = ""
+		sp.mu.Unlock()
 
-		publishSpotifyEvent("spotify_update", map[string]interface{}{
+		sp.broadcast("spotify_update", map[string]interface{}{
 			"authorized": true,
 			"track":      status,
 			"error":      "",

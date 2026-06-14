@@ -20,6 +20,10 @@ type HackerNews struct {
 	ShowThumbnails      bool            `yaml:"-"`
 }
 
+func init() {
+	Register("hacker-news", func() Widget { return &HackerNews{} })
+}
+
 func (widget *HackerNews) Initialize() error {
 	widget.withTitle("Hacker News").withCacheDuration(30 * time.Minute)
 
@@ -38,7 +42,7 @@ func (widget *HackerNews) Initialize() error {
 	return nil
 }
 
-func (widget *HackerNews) Update(ctx context.Context) {
+func (widget *HackerNews) Update(ctx context.Context, services ExternalServiceProvider) {
 	posts, err := feed.FetchHackerNewsPosts(widget.SortBy, 40, widget.CommentsUrlTemplate)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {

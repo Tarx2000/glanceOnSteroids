@@ -33,9 +33,6 @@ func (a *Application) HandleWidgetAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot reload credentials if we just added/updated a Spotify or calendar widget
-	if payload.Type == "spotify" {
-		InitSpotify(a.Config.Spotify.ClientID, a.Config.Spotify.ClientSecret, a.Config.Spotify.RedirectURL)
-	}
 	if payload.Type == "calendar" {
 		InitGoogle(a.Config.Google.ClientID, a.Config.Google.ClientSecret, a.Config.Google.RedirectURL)
 	}
@@ -261,16 +258,11 @@ func (a *Application) HandleWidgetUpdate(w http.ResponseWriter, r *http.Request)
 	// Dynamic config/service hot reload
 	// Need to check the type from config after reloading
 	a.configMu.RLock()
-	spotifyClientID := a.Config.Spotify.ClientID
-	spotifyClientSecret := a.Config.Spotify.ClientSecret
-	spotifyRedirectURL := a.Config.Spotify.RedirectURL
 	googleClientID := a.Config.Google.ClientID
 	googleClientSecret := a.Config.Google.ClientSecret
 	googleRedirectURL := a.Config.Google.RedirectURL
 	a.configMu.RUnlock()
 
-	InitSpotify(spotifyClientID, spotifyClientSecret, spotifyRedirectURL)
 	InitGoogle(googleClientID, googleClientSecret, googleRedirectURL)
-
 	w.WriteHeader(http.StatusOK)
 }

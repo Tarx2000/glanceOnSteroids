@@ -25,6 +25,10 @@ type RSS struct {
 	SingleLineTitles bool                  `yaml:"single-line-titles"`
 }
 
+func init() {
+	Register("rss", func() Widget { return &RSS{} })
+}
+
 // Initialize sets up default values for limit, collapse-after, and height parameters.
 func (widget *RSS) Initialize() error {
 	widget.withTitle("RSS Feed").withCacheDuration(1 * time.Hour)
@@ -49,7 +53,7 @@ func (widget *RSS) Initialize() error {
 }
 
 // Update fetches the latest items from all registered RSS feeds.
-func (widget *RSS) Update(ctx context.Context) {
+func (widget *RSS) Update(ctx context.Context, services ExternalServiceProvider) {
 	// Fetch feed items, passing the PreserveOrder setting to determine sorting behavior.
 	items, err := feed.GetItemsFromRSSFeeds(widget.FeedRequests, widget.PreserveOrder)
 
