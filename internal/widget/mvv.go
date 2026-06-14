@@ -7,7 +7,6 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/glanceapp/glance/internal/assets"
@@ -15,7 +14,7 @@ import (
 
 // mvvBaseURL is the base URL for the public transport API.
 // Defining this as a package-level variable allows overriding it during unit testing.
-var mvvBaseURL = "https://v6.db.transport.rest"
+var mvvBaseURL = "https://www.mvg.de/api/bgw-pt/v3"
 
 type MvvDeparture struct {
 	Line        string `json:"line"`
@@ -58,13 +57,14 @@ func (widget *Mvv) Update(ctx context.Context, services ExternalServiceProvider)
 		return
 	}
 
-	apiURL := fmt.Sprintf("%s/stops/%s/departures?duration=90&results=40", mvvBaseURL, url.PathEscape(widget.StationID))
+	apiURL := fmt.Sprintf("%s/departures?globalId=%s", mvvBaseURL, url.QueryEscape(widget.StationID))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		widget.withError(err).scheduleEarlyUpdate()
 		return
 	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -80,15 +80,11 @@ func (widget *Mvv) Update(ctx context.Context, services ExternalServiceProvider)
 	}
 
 	var rawDepartures []struct {
-		Direction   string `json:"direction"`
-		When        string `json:"when"`
-		PlannedWhen string `json:"plannedWhen"`
-		Delay       *int   `json:"delay"` // in seconds
-		Line        struct {
-			Name    string `json:"name"`
-			Mode    string `json:"mode"`
-			Product string `json:"product"`
-		} `json:"line"`
+		PlannedDepartureTime  int64  `json:"plannedDepartureTime"`
+		RealtimeDepartureTime int64  `json:"realtimeDepartureTime"`
+		TransportType         string `json:"transportType"` // UBAHN, SUBURBAN, BUS, TRAM
+		Label                 string `json:"label"`
+		Destination           string `json:"destination"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&rawDepartures); err != nil {
@@ -100,33 +96,29 @@ func (widget *Mvv) Update(ctx context.Context, services ExternalServiceProvider)
 
 	for _, rd := range rawDepartures {
 		// Determine transport type
-		prod := strings.ToLower(rd.Line.Product)
-		mode := strings.ToLower(rd.Line.Mode)
-		name := rd.Line.Name
-
 		var t string
-		if prod == "suburban" || mode == "train" || strings.HasPrefix(name, "S") {
+		switch rd.TransportType {
+		case "SUBURBAN":
 			t = "sbahn"
 			if !widget.ShowSBahn {
 				continue
 			}
-		} else if prod == "subway" || strings.HasPrefix(name, "U") {
+		case "UBAHN":
 			t = "ubahn"
 			if !widget.ShowUBahn {
 				continue
 			}
-		} else if mode == "bus" || prod == "bus" {
+		case "BUS":
 			t = "bus"
 			if !widget.ShowBus {
 				continue
 			}
-		} else if mode == "tram" || prod == "tram" || strings.Contains(strings.ToLower(name), "tram") {
+		case "TRAM":
 			t = "tram"
 			if !widget.ShowTram {
 				continue
 			}
-		} else {
-			// Fallback filter check (default to S-Bahn if unclear, or skip if none selected)
+		default:
 			t = "bus"
 			if !widget.ShowBus {
 				continue
@@ -135,28 +127,19 @@ func (widget *Mvv) Update(ctx context.Context, services ExternalServiceProvider)
 
 		// Parse departure time
 		timeStr := ""
-		tVal := rd.When
-		if tVal == "" {
-			tVal = rd.PlannedWhen
-		}
-		if tVal != "" {
-			parsedTime, err := time.Parse(time.RFC3339, tVal)
-			if err == nil {
-				timeStr = parsedTime.Format("15:04")
-			}
+		if rd.RealtimeDepartureTime > 0 {
+			timeStr = time.UnixMilli(rd.RealtimeDepartureTime).Format("15:04")
+		} else if rd.PlannedDepartureTime > 0 {
+			timeStr = time.UnixMilli(rd.PlannedDepartureTime).Format("15:04")
 		}
 
 		// Calculate delay in minutes
-		delayMin := 0
-		hasDelay := false
-		if rd.Delay != nil {
-			delayMin = *rd.Delay / 60
-			hasDelay = true
-		}
+		delayMin := int((rd.RealtimeDepartureTime - rd.PlannedDepartureTime) / 60000)
+		hasDelay := rd.RealtimeDepartureTime != rd.PlannedDepartureTime
 
 		departures = append(departures, MvvDeparture{
-			Line:        name,
-			Destination: rd.Direction,
+			Line:        rd.Label,
+			Destination: rd.Destination,
 			Time:        timeStr,
 			DelayMin:    delayMin,
 			HasDelay:    hasDelay,

@@ -480,6 +480,9 @@ func (a *Application) reloadConfig() error {
 	}
 	a.configMu.Unlock()
 
+	InitGoogle(config.Google.ClientID, config.Google.ClientSecret, config.Google.RedirectURL)
+	InitHue(config.Hue.ClientID, config.Hue.ClientSecret, config.Hue.RedirectURL)
+
 	widget.GlobalTimezone = config.Server.Timezone
 
 	for i := range config.Pages {
@@ -566,11 +569,25 @@ type spotifySettingsPayload struct {
 	RedirectURL  string `json:"redirect-url" yaml:"redirect-url,omitempty"`
 }
 
+type hueSettingsPayload struct {
+	ClientID     string `json:"client-id" yaml:"client-id"`
+	ClientSecret string `json:"client-secret" yaml:"client-secret"`
+	RedirectURL  string `json:"redirect-url" yaml:"redirect-url,omitempty"`
+}
+
+type googleSettingsPayload struct {
+	ClientID     string `json:"client-id" yaml:"client-id"`
+	ClientSecret string `json:"client-secret" yaml:"client-secret"`
+	RedirectURL  string `json:"redirect-url" yaml:"redirect-url,omitempty"`
+}
+
 type settingsPayload struct {
 	Branding brandingSettingsPayload `json:"branding"`
 	Server   serverSettingsPayload   `json:"server"`
 	Theme    themeSettingsPayload    `json:"theme"`
 	Spotify  spotifySettingsPayload  `json:"spotify"`
+	Google   googleSettingsPayload   `json:"google"`
+	Hue      hueSettingsPayload      `json:"hue"`
 }
 
 func maskSecret(s string) string {

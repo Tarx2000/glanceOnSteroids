@@ -865,8 +865,8 @@ func (cm *ConfigManager) DeleteWidget(pageSlug string, columnIndex string, widge
 	return cm.reloadFn()
 }
 
-// SaveSettings saves global application settings (branding, server, theme, spotify).
-func (cm *ConfigManager) SaveSettings(branding interface{}, server interface{}, theme interface{}, spotify interface{}) error {
+// SaveSettings saves global application settings (branding, server, theme, spotify, google, hue).
+func (cm *ConfigManager) SaveSettings(branding interface{}, server interface{}, theme interface{}, spotify interface{}, google interface{}, hue interface{}) error {
 	cm.configFileMu.Lock()
 	defer cm.configFileMu.Unlock()
 
@@ -891,6 +891,12 @@ func (cm *ConfigManager) SaveSettings(branding interface{}, server interface{}, 
 	}
 	if err := updateTopLevelKey(rootMap, "spotify", spotify); err != nil {
 		return fmt.Errorf("failed to update spotify settings: %w", err)
+	}
+	if err := updateTopLevelKey(rootMap, "google", google); err != nil {
+		return fmt.Errorf("failed to update google settings: %w", err)
+	}
+	if err := updateTopLevelKey(rootMap, "hue", hue); err != nil {
+		return fmt.Errorf("failed to update hue settings: %w", err)
 	}
 
 	if err := validateASTConfig(&rootNode); err != nil {

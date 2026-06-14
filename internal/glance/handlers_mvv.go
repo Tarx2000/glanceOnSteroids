@@ -20,7 +20,7 @@ func (a *Application) HandleMvvSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiURL := fmt.Sprintf("https://v6.db.transport.rest/locations?query=%s&poi=false&addresses=false", url.QueryEscape(query))
+	apiURL := fmt.Sprintf("https://www.mvg.de/api/bgw-pt/v3/locations?query=%s", url.QueryEscape(query))
 	resp, err := http.Get(apiURL)
 	if err != nil {
 		slog.Error("[MVV] Search request failed", "error", err)
@@ -35,9 +35,10 @@ func (a *Application) HandleMvvSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var results []struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		Type string `json:"type"`
+		GlobalId string `json:"globalId"`
+		Name     string `json:"name"`
+		Place    string `json:"place"`
+		Type     string `json:"type"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
@@ -47,10 +48,14 @@ func (a *Application) HandleMvvSearch(w http.ResponseWriter, r *http.Request) {
 
 	var items []MvvSearchItem
 	for _, res := range results {
-		if res.Type == "stop" || res.Type == "station" {
+		if res.Type == "STATION" && res.GlobalId != "" {
+			name := res.Name
+			if res.Place != "" {
+				name = fmt.Sprintf("%s, %s", res.Place, res.Name)
+			}
 			items = append(items, MvvSearchItem{
-				ID:   res.ID,
-				Name: res.Name,
+				ID:   res.GlobalId,
+				Name: name,
 			})
 		}
 	}

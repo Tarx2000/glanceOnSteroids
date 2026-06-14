@@ -2055,6 +2055,7 @@ function setupAddWidgetModal() {
         } else if (type === "gmail") {
             const hint = fieldsContainer.querySelector(".gmail-redirect-hint");
             if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/google/callback`;
+            prefillGoogleCredentials(fieldsContainer);
         } else if (type === "hue") {
             const hint = fieldsContainer.querySelector(".hue-redirect-hint");
             if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/hue/callback`;
@@ -3536,10 +3537,30 @@ function initDynamicFields(container, type, widget) {
     }
 }
 
+async function prefillGoogleCredentials(container) {
+    try {
+        const sRes = await fetch("/api/settings");
+        if (sRes.ok) {
+            const settings = await sRes.json();
+            if (settings.google) {
+                const cidInput = container.querySelector('[name="google_client_id"]');
+                const csecInput = container.querySelector('[name="google_client_secret"]');
+                const rurlInput = container.querySelector('[name="google_redirect_url"]');
+                if (cidInput && !cidInput.value) cidInput.value = settings.google["client-id"] || "";
+                if (csecInput && !csecInput.value) csecInput.value = settings.google["client-secret"] || "";
+                if (rurlInput && !rurlInput.value) rurlInput.value = settings.google["redirect-url"] || "";
+            }
+        }
+    } catch (err) {
+        console.error("Failed to load Google settings", err);
+    }
+}
+
 /**
  * Dynamically queries Google Calendars list and renders checkbox list in settings modal.
  */
 async function initGoogleCalendarFields(container, widget) {
+    await prefillGoogleCredentials(container);
     const hintEl = container.querySelector("#google-redirect-hint");
     if (hintEl) {
         const origin = window.location.origin;
@@ -3669,6 +3690,65 @@ async function initHueFields(container, widget) {
     const checkboxesDiv = container.querySelector("#hue-resources-checkboxes");
 
     if (!pairingContainer || !checkContainer || !checkboxesDiv) return;
+
+    // Prefill Hue configuration fields from /api/settings
+    let currentSettings = null;
+    try {
+        const sRes = await fetch("/api/settings");
+        if (sRes.ok) {
+            currentSettings = await sRes.json();
+            if (currentSettings.hue) {
+                const cidInput = container.querySelector('[name="hue_client_id"]');
+                const csecInput = container.querySelector('[name="hue_client_secret"]');
+                const rurlInput = container.querySelector('[name="hue_redirect_url"]');
+                if (cidInput && !cidInput.value) cidInput.value = currentSettings.hue["client-id"] || "";
+                if (csecInput && !csecInput.value) csecInput.value = currentSettings.hue["client-secret"] || "";
+                if (rurlInput && !rurlInput.value) rurlInput.value = currentSettings.hue["redirect-url"] || "";
+            }
+        }
+    } catch (err) {
+        console.error("Failed to load Hue settings", err);
+    }
+
+    const loginLink = container.querySelector("#hue-login-link");
+    if (loginLink) {
+        loginLink.addEventListener("click", async (e) => {
+            e.preventDefault();
+            const cid = container.querySelector('[name="hue_client_id"]')?.value || "";
+            const csec = container.querySelector('[name="hue_client_secret"]')?.value || "";
+            const rurl = container.querySelector('[name="hue_redirect_url"]')?.value || "";
+
+            if (!cid || !csec) {
+                showToast("Bitte Client-ID und Secret ausfüllen", "error");
+                return;
+            }
+
+            try {
+                showToast("Speichere Zugangsdaten...", "info");
+                if (!currentSettings) {
+                    const sRes = await fetch("/api/settings");
+                    if (sRes.ok) currentSettings = await sRes.json();
+                }
+                if (currentSettings) {
+                    currentSettings.hue = {
+                        "client-id": cid,
+                        "client-secret": csec,
+                        "redirect-url": rurl
+                    };
+                    const saveRes = await fetch("/api/settings", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(currentSettings)
+                    });
+                    if (!saveRes.ok) throw new Error("Failed to save settings");
+                }
+                window.location.href = loginLink.href;
+            } catch (err) {
+                console.error(err);
+                showToast("Speichern der Zugangsdaten fehlgeschlagen", "error");
+            }
+        });
+    }
 
     checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Lade Ressourcen...</p>`;
     checkContainer.style.display = "block";
@@ -3965,6 +4045,7 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
         } else if (type === "gmail") {
             const hint = fieldsContainer.querySelector(".gmail-redirect-hint");
             if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/google/callback`;
+            await prefillGoogleCredentials(fieldsContainer);
         } else if (type === "hue") {
             const hint = fieldsContainer.querySelector(".hue-redirect-hint");
             if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/hue/callback`;

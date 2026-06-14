@@ -43,26 +43,18 @@ func TestMvvWidget(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mockResponse := []map[string]any{
 			{
-				"direction": "Marienplatz",
-				"when": "2026-06-15T01:00:00+02:00",
-				"plannedWhen": "2026-06-15T01:00:00+02:00",
-				"delay": 120, // 2 minutes (in seconds: 120)
-				"line": map[string]any{
-					"name": "U3",
-					"mode": "subway",
-					"product": "subway",
-				},
+				"plannedDepartureTime":  int64(1781479260000),
+				"realtimeDepartureTime": int64(1781479380000), // 2 minutes delay (120000 ms)
+				"transportType":         "UBAHN",
+				"label":                 "U3",
+				"destination":           "Marienplatz",
 			},
 			{
-				"direction": "Feldmoching",
-				"when": "2026-06-15T01:05:00+02:00",
-				"plannedWhen": "2026-06-15T01:05:00+02:00",
-				"delay": nil, // no delay
-				"line": map[string]any{
-					"name": "S1",
-					"mode": "train",
-					"product": "suburban",
-				},
+				"plannedDepartureTime":  int64(1781479500000),
+				"realtimeDepartureTime": int64(1781479500000), // no delay
+				"transportType":         "SUBURBAN",
+				"label":                 "S1",
+				"destination":           "Feldmoching",
 			},
 		}
 		w.Header().Set("Content-Type", "application/json")

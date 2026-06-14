@@ -39,6 +39,16 @@ func (a *Application) HandleSettingsGet(w http.ResponseWriter, r *http.Request) 
 			ClientSecret: maskSecret(a.Config.Spotify.ClientSecret),
 			RedirectURL:  a.Config.Spotify.RedirectURL,
 		},
+		Google: googleSettingsPayload{
+			ClientID:     a.Config.Google.ClientID,
+			ClientSecret: maskSecret(a.Config.Google.ClientSecret),
+			RedirectURL:  a.Config.Google.RedirectURL,
+		},
+		Hue: hueSettingsPayload{
+			ClientID:     a.Config.Hue.ClientID,
+			ClientSecret: maskSecret(a.Config.Hue.ClientSecret),
+			RedirectURL:  a.Config.Hue.RedirectURL,
+		},
 	}
 	a.configMu.RUnlock()
 
@@ -59,13 +69,21 @@ func (a *Application) HandleSettingsSave(w http.ResponseWriter, r *http.Request)
 	// Hot reload credentials: check if secret is masked placeholder
 	a.configMu.RLock()
 	spotifySecret := a.Config.Spotify.ClientSecret
+	googleSecret := a.Config.Google.ClientSecret
+	hueSecret := a.Config.Hue.ClientSecret
 	a.configMu.RUnlock()
 
 	if strings.TrimSpace(payload.Spotify.ClientSecret) == "********" {
 		payload.Spotify.ClientSecret = spotifySecret
 	}
+	if strings.TrimSpace(payload.Google.ClientSecret) == "********" {
+		payload.Google.ClientSecret = googleSecret
+	}
+	if strings.TrimSpace(payload.Hue.ClientSecret) == "********" {
+		payload.Hue.ClientSecret = hueSecret
+	}
 
-	if err := a.ConfigManager.SaveSettings(payload.Branding, payload.Server, payload.Theme, payload.Spotify); err != nil {
+	if err := a.ConfigManager.SaveSettings(payload.Branding, payload.Server, payload.Theme, payload.Spotify, payload.Google, payload.Hue); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
