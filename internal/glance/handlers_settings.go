@@ -71,6 +71,9 @@ func (a *Application) HandleSettingsSave(w http.ResponseWriter, r *http.Request)
 	spotifySecret := a.Config.Spotify.ClientSecret
 	googleSecret := a.Config.Google.ClientSecret
 	hueSecret := a.Config.Hue.ClientSecret
+	activeHost := a.Config.Server.Host
+	activePort := a.Config.Server.Port
+	activeAssetsPath := a.Config.Server.AssetsPath
 	a.configMu.RUnlock()
 
 	if strings.TrimSpace(payload.Spotify.ClientSecret) == "********" {
@@ -82,6 +85,11 @@ func (a *Application) HandleSettingsSave(w http.ResponseWriter, r *http.Request)
 	if strings.TrimSpace(payload.Hue.ClientSecret) == "********" {
 		payload.Hue.ClientSecret = hueSecret
 	}
+
+	// Automatically preserve Host, Port, and AssetsPath from the active config
+	payload.Server.Host = activeHost
+	payload.Server.Port = activePort
+	payload.Server.AssetsPath = activeAssetsPath
 
 	if err := a.ConfigManager.SaveSettings(payload.Branding, payload.Server, payload.Theme, payload.Spotify, payload.Google, payload.Hue); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -134,11 +142,19 @@ func (a *Application) HandleLayoutBatchSave(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	var batch []PageLayoutPayload
 	for _, p := range payload.Pages {
-		if err := a.ConfigManager.SaveLayout(p.PageSlug, p.Head, p.Columns, p.ColumnSizes); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		batch = append(batch, PageLayoutPayload{
+			PageSlug:    p.PageSlug,
+			Head:        p.Head,
+			Columns:     p.Columns,
+			ColumnSizes: p.ColumnSizes,
+		})
+	}
+
+	if err := a.ConfigManager.SaveLayoutBatch(batch); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	w.WriteHeader(http.StatusOK)

@@ -177,8 +177,106 @@ func (cm *ConfigManager) ImportConfig(contentBytes []byte) error {
 	return cm.reloadFn()
 }
 
-// SaveLayout updates widget positioning and ordering on a page.
-func (cm *ConfigManager) SaveLayout(pageSlug string, head []string, columns [][]string, columnSizes []string) error {
+// PageLayoutPayload holds the layout configuration for a single page.
+type PageLayoutPayload struct {
+	PageSlug    string
+	Head        []string
+	Columns     [][]string
+	ColumnSizes []string
+}
+
+// catalogWidgets recursively maps all child widgets of a group widget to their hierarchical address.
+func catalogWidgets(node *yaml.Node, prefix string, originalNodesMap map[string]*yaml.Node) {
+	typeVal := findMapValue(node, "type")
+	if typeVal != nil && typeVal.Value == "group" {
+		widgetsNode := findMapValue(node, "widgets")
+		if widgetsNode != nil && widgetsNode.Kind == yaml.SequenceNode {
+			for wIdx, w := range widgetsNode.Content {
+				wID := prefix + "/" + strconv.Itoa(wIdx)
+				originalNodesMap[wID] = w
+				catalogWidgets(w, wID, originalNodesMap)
+			}
+		}
+	}
+}
+
+// reconstructWidgetNode recursively recreates a widget node, its group children, and marks placed nodes.
+func (cm *ConfigManager) reconstructWidgetNode(wID string, originalNodesMap map[string]*yaml.Node, placedNodes map[*yaml.Node]bool) (*yaml.Node, error) {
+	idxBracket := strings.Index(wID, "[")
+	if idxBracket != -1 {
+		baseID := wID[:idxBracket]
+		inside := wID[idxBracket+1 : len(wID)-1]
+
+		targetID := strings.ReplaceAll(baseID, ":", "/")
+		node, exists := originalNodesMap[targetID]
+		if !exists {
+			return nil, fmt.Errorf("group widget %s not found", targetID)
+		}
+
+		// Parse children commas, respecting brackets depth
+		var children []string
+		var current strings.Builder
+		depth := 0
+		for i := 0; i < len(inside); i++ {
+			char := inside[i]
+			if char == '[' {
+				depth++
+				current.WriteByte(char)
+			} else if char == ']' {
+				depth--
+				current.WriteByte(char)
+			} else if char == ',' && depth == 0 {
+				children = append(children, current.String())
+				current.Reset()
+			} else {
+				current.WriteByte(char)
+			}
+		}
+		if current.Len() > 0 {
+			children = append(children, current.String())
+		}
+
+		var newChildren []*yaml.Node
+		for _, childID := range children {
+			childID = strings.TrimSpace(childID)
+			if childID == "" {
+				continue
+			}
+			childNode, err := cm.reconstructWidgetNode(childID, originalNodesMap, placedNodes)
+			if err != nil {
+				return nil, err
+			}
+			newChildren = append(newChildren, childNode)
+		}
+
+		// Rebuild widgets key in the group mapping node
+		widgetsNode := findMapValue(node, "widgets")
+		if widgetsNode == nil {
+			widgetsNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+			node.Content = append(node.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "widgets"},
+				widgetsNode,
+			)
+		}
+		widgetsNode.Content = newChildren
+		widgetsNode.Style = 0
+
+		placedNodes[node] = true
+		return node, nil
+	}
+
+	targetID := strings.ReplaceAll(wID, ":", "/")
+	node, exists := originalNodesMap[targetID]
+	if !exists {
+		return nil, fmt.Errorf("widget %s not found", targetID)
+	}
+
+	placedNodes[node] = true
+	return node, nil
+}
+
+// SaveLayoutBatch updates widget positioning and ordering across multiple pages atomically in a single read-update-write transaction.
+func (cm *ConfigManager) SaveLayoutBatch(pages []PageLayoutPayload) error {
 	cm.configFileMu.Lock()
 	defer cm.configFileMu.Unlock()
 
@@ -187,114 +285,187 @@ func (cm *ConfigManager) SaveLayout(pageSlug string, head []string, columns [][]
 		return err
 	}
 
-	pageNode, err := findPageNode(&rootNode, pageSlug)
-	if err != nil {
-		return err
+	if len(rootNode.Content) == 0 {
+		return fmt.Errorf("empty YAML document")
+	}
+	rootMap := rootNode.Content[0]
+	pagesNode := findMapValue(rootMap, "pages")
+	if pagesNode == nil || pagesNode.Kind != yaml.SequenceNode {
+		return fmt.Errorf("pages block not found or invalid")
 	}
 
-	columnsNode := findMapValue(pageNode, "columns")
-	if columnsNode == nil || columnsNode.Kind != yaml.SequenceNode {
-		return fmt.Errorf("columns not found on page")
-	}
-
-	// Catalog all original widgets across the page to re-map them by ID
+	// 1. Catalog all original widgets globally across all pages
 	originalNodesMap := make(map[string]*yaml.Node)
-	nodesToDelete := make(map[*yaml.Node]bool)
-
-	// Catalog head widgets
-	hNode := findMapValue(pageNode, "head-widgets")
-	if hNode != nil && hNode.Kind == yaml.SequenceNode {
-		for wIdx, w := range hNode.Content {
-			wID := pageSlug + "/head/" + strconv.Itoa(wIdx)
-			originalNodesMap[wID] = w
-			nodesToDelete[w] = true
+	for _, pageNode := range pagesNode.Content {
+		nameNode := findMapValue(pageNode, "name")
+		slugNode := findMapValue(pageNode, "slug")
+		slug := ""
+		if slugNode != nil {
+			slug = slugNode.Value
+		} else if nameNode != nil {
+			slug = titleToSlug(nameNode.Value)
 		}
-	}
+		if slug == "" {
+			continue
+		}
 
-	// Catalog columns widgets
-	for cIdx, colNode := range columnsNode.Content {
-		colWidgets := findMapValue(colNode, "widgets")
-		if colWidgets != nil && colWidgets.Kind == yaml.SequenceNode {
-			for wIdx, w := range colWidgets.Content {
-				wID := pageSlug + "/" + strconv.Itoa(cIdx) + "/" + strconv.Itoa(wIdx)
+		// Catalog head widgets
+		hNode := findMapValue(pageNode, "head-widgets")
+		if hNode != nil && hNode.Kind == yaml.SequenceNode {
+			for wIdx, w := range hNode.Content {
+				wID := slug + "/head/" + strconv.Itoa(wIdx)
 				originalNodesMap[wID] = w
-				nodesToDelete[w] = true
+				catalogWidgets(w, wID, originalNodesMap)
+			}
+		}
+
+		// Catalog column widgets
+		columnsNode := findMapValue(pageNode, "columns")
+		if columnsNode != nil && columnsNode.Kind == yaml.SequenceNode {
+			for cIdx, colNode := range columnsNode.Content {
+				colWidgets := findMapValue(colNode, "widgets")
+				if colWidgets != nil && colWidgets.Kind == yaml.SequenceNode {
+					for wIdx, w := range colWidgets.Content {
+						wID := slug + "/" + strconv.Itoa(cIdx) + "/" + strconv.Itoa(wIdx)
+						originalNodesMap[wID] = w
+						catalogWidgets(w, wID, originalNodesMap)
+					}
+				}
 			}
 		}
 	}
 
-	cleanID := func(id string) string {
-		if idx := strings.Index(id, "["); idx != -1 {
-			id = id[:idx]
-		}
-		return strings.ReplaceAll(id, ":", "/")
-	}
+	placedNodes := make(map[*yaml.Node]bool)
 
-	// 1. Rebuild Head Widgets sequence
-	var newHeadContent []*yaml.Node
-	for _, wID := range head {
-		targetID := cleanID(wID)
-		if node, exists := originalNodesMap[targetID]; exists {
+	// 2. Rebuild updated pages
+	for _, p := range pages {
+		pageNode, err := findPageNode(&rootNode, p.PageSlug)
+		if err != nil {
+			return err
+		}
+
+		columnsNode := findMapValue(pageNode, "columns")
+		if columnsNode == nil || columnsNode.Kind != yaml.SequenceNode {
+			return fmt.Errorf("columns not found on page %s", p.PageSlug)
+		}
+
+		// Rebuild head-widgets
+		var newHeadContent []*yaml.Node
+		for _, wID := range p.Head {
+			node, err := cm.reconstructWidgetNode(wID, originalNodesMap, placedNodes)
+			if err != nil {
+				continue
+			}
 			newHeadContent = append(newHeadContent, node)
-			delete(nodesToDelete, node)
 		}
-	}
 
-	if len(newHeadContent) > 0 {
-		hNode = findMapValue(pageNode, "head-widgets")
-		if hNode == nil {
-			hNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-			pageNode.Content = append(pageNode.Content,
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "head-widgets"},
-				hNode,
-			)
-		}
-		hNode.Content = newHeadContent
-		hNode.Style = 0
-	} else {
-		// Remove head-widgets node if empty
-		removeMapKey(pageNode, "head-widgets")
-	}
-
-	// 2. Rebuild Columns
-	var newColumns []*yaml.Node
-	for colIdx, colWidgetsIDs := range columns {
-		var colNode *yaml.Node
-		if colIdx < len(columnsNode.Content) {
-			colNode = columnsNode.Content[colIdx]
+		if len(newHeadContent) > 0 {
+			hNode := findMapValue(pageNode, "head-widgets")
+			if hNode == nil {
+				hNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+				pageNode.Content = append(pageNode.Content,
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "head-widgets"},
+					hNode,
+				)
+			}
+			hNode.Content = newHeadContent
+			hNode.Style = 0
 		} else {
-			colNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			removeMapKey(pageNode, "head-widgets")
 		}
 
-		// Update column size
-		size := "full"
-		if colIdx < len(columnSizes) {
-			size = columnSizes[colIdx]
-		}
-		updateMapValue(colNode, "size", size)
+		// Rebuild columns
+		var newColumns []*yaml.Node
+		for colIdx, colWidgetsIDs := range p.Columns {
+			var colNode *yaml.Node
+			if colIdx < len(columnsNode.Content) {
+				colNode = columnsNode.Content[colIdx]
+			} else {
+				colNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			}
 
-		var newColWidgets []*yaml.Node
-		for _, wID := range colWidgetsIDs {
-			targetID := cleanID(wID)
-			if node, exists := originalNodesMap[targetID]; exists {
+			size := "full"
+			if colIdx < len(p.ColumnSizes) {
+				size = p.ColumnSizes[colIdx]
+			}
+			updateMapValue(colNode, "size", size)
+
+			var newColWidgets []*yaml.Node
+			for _, wID := range colWidgetsIDs {
+				node, err := cm.reconstructWidgetNode(wID, originalNodesMap, placedNodes)
+				if err != nil {
+					continue
+				}
 				newColWidgets = append(newColWidgets, node)
-				delete(nodesToDelete, node)
+			}
+
+			colWidgetsNode := findMapValue(colNode, "widgets")
+			if colWidgetsNode == nil {
+				colWidgetsNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+				colNode.Content = append(colNode.Content,
+					&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "widgets"},
+					colWidgetsNode,
+				)
+			}
+			colWidgetsNode.Content = newColWidgets
+			colWidgetsNode.Style = 0
+			newColumns = append(newColumns, colNode)
+		}
+		columnsNode.Content = newColumns
+	}
+
+	// 3. Prevent Duplication: Filter out placed nodes from pages that were NOT updated
+	updatedPages := make(map[string]bool)
+	for _, p := range pages {
+		updatedPages[p.PageSlug] = true
+	}
+
+	for _, pageNode := range pagesNode.Content {
+		nameNode := findMapValue(pageNode, "name")
+		slugNode := findMapValue(pageNode, "slug")
+		slug := ""
+		if slugNode != nil {
+			slug = slugNode.Value
+		} else if nameNode != nil {
+			slug = titleToSlug(nameNode.Value)
+		}
+		if slug == "" || updatedPages[slug] {
+			continue
+		}
+
+		// Filter head widgets
+		hNode := findMapValue(pageNode, "head-widgets")
+		if hNode != nil && hNode.Kind == yaml.SequenceNode {
+			var filtered []*yaml.Node
+			for _, w := range hNode.Content {
+				if !placedNodes[w] {
+					filtered = append(filtered, w)
+				}
+			}
+			if len(filtered) > 0 {
+				hNode.Content = filtered
+			} else {
+				removeMapKey(pageNode, "head-widgets")
 			}
 		}
 
-		colWidgetsNode := findMapValue(colNode, "widgets")
-		if colWidgetsNode == nil {
-			colWidgetsNode = &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-			colNode.Content = append(colNode.Content,
-				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "widgets"},
-				colWidgetsNode,
-			)
+		// Filter columns widgets
+		columnsNode := findMapValue(pageNode, "columns")
+		if columnsNode != nil && columnsNode.Kind == yaml.SequenceNode {
+			for _, colNode := range columnsNode.Content {
+				colWidgets := findMapValue(colNode, "widgets")
+				if colWidgets != nil && colWidgets.Kind == yaml.SequenceNode {
+					var filtered []*yaml.Node
+					for _, w := range colWidgets.Content {
+						if !placedNodes[w] {
+							filtered = append(filtered, w)
+						}
+					}
+					colWidgets.Content = filtered
+				}
+			}
 		}
-		colWidgetsNode.Content = newColWidgets
-		colWidgetsNode.Style = 0
-		newColumns = append(newColumns, colNode)
 	}
-	columnsNode.Content = newColumns
 
 	if err := validateASTConfig(&rootNode); err != nil {
 		return err
@@ -305,6 +476,17 @@ func (cm *ConfigManager) SaveLayout(pageSlug string, head []string, columns [][]
 	}
 
 	return cm.reloadFn()
+}
+
+// SaveLayout updates widget positioning and ordering on a page.
+func (cm *ConfigManager) SaveLayout(pageSlug string, head []string, columns [][]string, columnSizes []string) error {
+	payload := PageLayoutPayload{
+		PageSlug:    pageSlug,
+		Head:        head,
+		Columns:     columns,
+		ColumnSizes: columnSizes,
+	}
+	return cm.SaveLayoutBatch([]PageLayoutPayload{payload})
 }
 
 // AddWidget appends a new widget to a page's column or head block.

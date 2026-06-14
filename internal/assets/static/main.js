@@ -2557,9 +2557,6 @@ function setupSettingsMenu() {
             form.elements["branding_custom_footer"].value = (data.branding && data.branding["custom-footer"]) || "";
 
             // Map server settings
-            form.elements["server_host"].value = data.server.host || "";
-            form.elements["server_port"].value = data.server.port || "";
-            form.elements["server_assets_path"].value = data.server["assets-path"] || "";
             form.elements["server_timezone"].value = data.server.timezone || "";
 
             // Map Spotify credentials
@@ -2628,9 +2625,6 @@ function setupSettingsMenu() {
 
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
-
-        const newPort = parseInt(form.elements["server_port"].value, 10);
-        const newHost = form.elements["server_host"].value || "127.0.0.1";
         
         // Assemble target payload for save API
         const payload = {
@@ -2639,9 +2633,6 @@ function setupSettingsMenu() {
                 "custom-footer": form.elements["branding_custom_footer"].value
             },
             server: {
-                host: newHost,
-                port: newPort,
-                "assets-path": form.elements["server_assets_path"].value,
                 timezone: form.elements["server_timezone"].value
             },
             theme: {
@@ -2707,16 +2698,7 @@ function setupSettingsMenu() {
                     }
                 }
 
-                const currentPort = parseInt(window.location.port || (window.location.protocol === "https:" ? "443" : "80"), 10);
-                if (newPort !== currentPort) {
-                    alert(`Settings saved successfully. Port changed from ${currentPort} to ${newPort}. The application is reloading on the new port.`);
-                    setTimeout(() => {
-                        const hostPart = (newHost === "0.0.0.0" || newHost === "") ? window.location.hostname : newHost;
-                        window.location.href = `${window.location.protocol}//${hostPart}:${newPort}`;
-                    }, CLIENT_CONFIG.portRedirectDelayMs);
-                } else {
-                    window.location.reload();
-                }
+                window.location.reload();
             } else {
                 const err = await response.text();
                 showToast("Failed to save settings: " + err, "error");
