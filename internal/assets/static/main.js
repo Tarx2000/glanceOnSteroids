@@ -876,7 +876,13 @@ function toggleEditMode(active) {
                                 });
                                 if (resp.ok) {
                                     showToast("Page deleted", "success");
-                                    window.location.reload();
+                                    // If we are currently viewing the page that was deleted, redirect to "/"
+                                    const currentSlug = window.location.pathname.replace(/^\//, "");
+                                    if (currentSlug === pageSlug) {
+                                        window.location.href = "/";
+                                    } else {
+                                        window.location.reload();
+                                    }
                                 } else {
                                     const err = await resp.text();
                                     showToast("Failed to delete page: " + err, "error");
@@ -1441,14 +1447,6 @@ function parseDurationToHoursMinutes(durationStr) {
 
 const widgetFieldTemplates = {
     calendar: `
-        <div id="google-ip-warning" style="display: none; font-size: 0.8em; color: var(--color-negative); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-negative); padding: 8px; border-radius: 4px; background: rgba(255, 69, 58, 0.05);"></div>
-        <div id="google-redirect-hint" style="font-size: 0.8em; color: var(--color-primary); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-primary); padding: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.2);">Redirect URI: http://localhost:8086/api/google/callback</div>
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client ID (Optional)</label>
-        <input type="text" name="google_client_id" placeholder="Your Google Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client Secret (Optional)</label>
-        <input type="password" name="google_client_secret" placeholder="Your Google Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Redirect URL (Optional)</label>
-        <input type="url" name="google_redirect_url" placeholder="http://localhost:8086/api/google/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
         <div style="display: flex; gap: 15px; margin-bottom: 10px;">
             <div style="flex: 1;">
                 <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Viewport Limit (Initial Entries)</label>
@@ -1943,28 +1941,9 @@ const widgetFieldTemplates = {
         </div>
     `,
     gmail: `
-        <div style="font-size: 0.8em; color: var(--color-primary); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-primary); padding: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.2);" class="gmail-redirect-hint">Redirect URI: http://localhost:8086/api/google/callback</div>
-        <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 12px;">Nutzt die globalen Google OAuth-Zugangsdaten. Falls noch nicht geschehen, trage diese unten ein.</p>
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client ID (Optional)</label>
-        <input type="text" name="google_client_id" placeholder="Google Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client Secret (Optional)</label>
-        <input type="password" name="google_client_secret" placeholder="Google Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Redirect URL (Optional)</label>
-        <input type="url" name="google_redirect_url" placeholder="http://localhost:8086/api/google/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 12px;">Nutzt die globalen Google OAuth-Zugangsdaten. Falls noch nicht geschehen, trage diese in den globalen Einstellungen ein.</p>
     `,
     hue: `
-        <div style="font-size: 0.8em; color: var(--color-primary); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-primary); padding: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.2);" class="hue-redirect-hint">Redirect URI: http://localhost:8086/api/hue/callback</div>
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Philips Hue Client ID</label>
-        <input type="text" name="hue_client_id" placeholder="Your Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Philips Hue Client Secret</label>
-        <input type="password" name="hue_client_secret" placeholder="Your Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Philips Hue Redirect URL</label>
-        <input type="url" name="hue_redirect_url" placeholder="http://localhost:8086/api/hue/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 15px;" />
-        
-        <div id="hue-pairing-container" style="display: none; margin-bottom: 15px;">
-            <a href="/api/hue/login" id="hue-login-link" style="display: inline-block; padding: 8px 12px; background: #ffa200; color: #000; font-weight: bold; border-radius: 4px; text-decoration: none; font-size: 0.85em; text-align: center;">Verbindung herstellen (OAuth + Pairing)</a>
-        </div>
-        
         <div id="hue-resources-container" style="display: none; margin-bottom: 10px;">
             <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Räume / Lampen / Szenen auswählen</label>
             <div id="hue-resources-checkboxes" style="max-height: 200px; overflow-y: auto; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; display: flex; flex-direction: column; gap: 6px;"></div>
@@ -2053,14 +2032,8 @@ function setupAddWidgetModal() {
         } else if (type === "mvv") {
             initMvvFields(fieldsContainer);
         } else if (type === "gmail") {
-            const hint = fieldsContainer.querySelector(".gmail-redirect-hint");
-            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/google/callback`;
-            prefillGoogleCredentials(fieldsContainer);
+            // Gmail requires no local configuration fields
         } else if (type === "hue") {
-            const hint = fieldsContainer.querySelector(".hue-redirect-hint");
-            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/hue/callback`;
-            const loginLink = fieldsContainer.querySelector("#hue-login-link");
-            if (loginLink) loginLink.href = `/api/hue/login`;
             initHueFields(fieldsContainer);
         }
     });
@@ -2594,6 +2567,16 @@ function setupSettingsMenu() {
             form.elements["spotify_client_secret"].value = data.spotify["client-secret"] || "";
             form.elements["spotify_redirect_url"].value = data.spotify["redirect-url"] || "";
 
+            // Map Google credentials
+            form.elements["google_client_id"].value = (data.google && data.google["client-id"]) || "";
+            form.elements["google_client_secret"].value = (data.google && data.google["client-secret"]) || "";
+            form.elements["google_redirect_url"].value = (data.google && data.google["redirect-url"]) || "";
+
+            // Map Hue credentials
+            form.elements["hue_client_id"].value = (data.hue && data.hue["client-id"]) || "";
+            form.elements["hue_client_secret"].value = (data.hue && data.hue["client-secret"]) || "";
+            form.elements["hue_redirect_url"].value = (data.hue && data.hue["redirect-url"]) || "";
+
             // Map Theme & style customizations
             form.elements["theme_light"].checked = data.theme.light || false;
             form.elements["theme_background_color"].value = data.theme["background-color"] || "";
@@ -2679,6 +2662,16 @@ function setupSettingsMenu() {
                 "client-id": form.elements["spotify_client_id"].value,
                 "client-secret": form.elements["spotify_client_secret"].value,
                 "redirect-url": form.elements["spotify_redirect_url"].value
+            },
+            google: {
+                "client-id": form.elements["google_client_id"].value,
+                "client-secret": form.elements["google_client_secret"].value,
+                "redirect-url": form.elements["google_redirect_url"].value
+            },
+            hue: {
+                "client-id": form.elements["hue_client_id"].value,
+                "client-secret": form.elements["hue_client_secret"].value,
+                "redirect-url": form.elements["hue_redirect_url"].value
             }
         };
 
@@ -3537,46 +3530,10 @@ function initDynamicFields(container, type, widget) {
     }
 }
 
-async function prefillGoogleCredentials(container) {
-    try {
-        const sRes = await fetch("/api/settings");
-        if (sRes.ok) {
-            const settings = await sRes.json();
-            if (settings.google) {
-                const cidInput = container.querySelector('[name="google_client_id"]');
-                const csecInput = container.querySelector('[name="google_client_secret"]');
-                const rurlInput = container.querySelector('[name="google_redirect_url"]');
-                if (cidInput && !cidInput.value) cidInput.value = settings.google["client-id"] || "";
-                if (csecInput && !csecInput.value) csecInput.value = settings.google["client-secret"] || "";
-                if (rurlInput && !rurlInput.value) rurlInput.value = settings.google["redirect-url"] || "";
-            }
-        }
-    } catch (err) {
-        console.error("Failed to load Google settings", err);
-    }
-}
-
 /**
  * Dynamically queries Google Calendars list and renders checkbox list in settings modal.
  */
 async function initGoogleCalendarFields(container, widget) {
-    await prefillGoogleCredentials(container);
-    const hintEl = container.querySelector("#google-redirect-hint");
-    if (hintEl) {
-        const origin = window.location.origin;
-        hintEl.textContent = `Redirect URI: ${origin}/api/google/callback`;
-        
-        const warningEl = container.querySelector("#google-ip-warning");
-        if (warningEl) {
-            if (window.location.hostname === "127.0.0.1") {
-                warningEl.innerHTML = `<strong>Warning:</strong> Google OAuth does not allow raw IP addresses like <code>127.0.0.1</code> for redirect URIs. Please access the dashboard via <a href="http://localhost:8086/" style="color:var(--color-primary);text-decoration:underline;">http://localhost:8086/</a> instead to perform the authentication.`;
-                warningEl.style.display = "block";
-            } else {
-                warningEl.style.display = "none";
-            }
-        }
-    }
-
     const checkContainer = container.querySelector("#google-calendars-container");
     const checkboxesDiv = container.querySelector("#google-calendars-checkboxes");
     if (!checkContainer || !checkboxesDiv) return;
@@ -3587,7 +3544,7 @@ async function initGoogleCalendarFields(container, widget) {
     try {
         const res = await fetch("/api/google/calendars");
         if (res.status === 401) {
-            checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Please authorize Google Calendar on the dashboard first.</p>`;
+            checkboxesDiv.innerHTML = `<p style="font-size:0.85em; color:var(--color-negative); padding:4px;">Google Calendar ist nicht verbunden. Bitte konfigurieren und verbinden Sie Google zuerst in den <strong>globalen Einstellungen</strong>.</p>`;
             return;
         }
         if (!res.ok) {
@@ -3685,89 +3642,23 @@ function initMvvFields(container, widget) {
 }
 
 async function initHueFields(container, widget) {
-    const pairingContainer = container.querySelector("#hue-pairing-container");
     const checkContainer = container.querySelector("#hue-resources-container");
     const checkboxesDiv = container.querySelector("#hue-resources-checkboxes");
 
-    if (!pairingContainer || !checkContainer || !checkboxesDiv) return;
-
-    // Prefill Hue configuration fields from /api/settings
-    let currentSettings = null;
-    try {
-        const sRes = await fetch("/api/settings");
-        if (sRes.ok) {
-            currentSettings = await sRes.json();
-            if (currentSettings.hue) {
-                const cidInput = container.querySelector('[name="hue_client_id"]');
-                const csecInput = container.querySelector('[name="hue_client_secret"]');
-                const rurlInput = container.querySelector('[name="hue_redirect_url"]');
-                if (cidInput && !cidInput.value) cidInput.value = currentSettings.hue["client-id"] || "";
-                if (csecInput && !csecInput.value) csecInput.value = currentSettings.hue["client-secret"] || "";
-                if (rurlInput && !rurlInput.value) rurlInput.value = currentSettings.hue["redirect-url"] || "";
-            }
-        }
-    } catch (err) {
-        console.error("Failed to load Hue settings", err);
-    }
-
-    const loginLink = container.querySelector("#hue-login-link");
-    if (loginLink) {
-        loginLink.addEventListener("click", async (e) => {
-            e.preventDefault();
-            const cid = container.querySelector('[name="hue_client_id"]')?.value || "";
-            const csec = container.querySelector('[name="hue_client_secret"]')?.value || "";
-            const rurl = container.querySelector('[name="hue_redirect_url"]')?.value || "";
-
-            if (!cid || !csec) {
-                showToast("Bitte Client-ID und Secret ausfüllen", "error");
-                return;
-            }
-
-            try {
-                showToast("Speichere Zugangsdaten...", "info");
-                if (!currentSettings) {
-                    const sRes = await fetch("/api/settings");
-                    if (sRes.ok) currentSettings = await sRes.json();
-                }
-                if (currentSettings) {
-                    currentSettings.hue = {
-                        "client-id": cid,
-                        "client-secret": csec,
-                        "redirect-url": rurl
-                    };
-                    const saveRes = await fetch("/api/settings", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(currentSettings)
-                    });
-                    if (!saveRes.ok) throw new Error("Failed to save settings");
-                }
-                window.location.href = loginLink.href;
-            } catch (err) {
-                console.error(err);
-                showToast("Speichern der Zugangsdaten fehlgeschlagen", "error");
-            }
-        });
-    }
+    if (!checkContainer || !checkboxesDiv) return;
 
     checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Lade Ressourcen...</p>`;
     checkContainer.style.display = "block";
 
     try {
         const res = await fetch("/api/hue/resources");
-        if (res.status === 500) {
-            checkboxesDiv.innerHTML = "";
-            checkContainer.style.display = "none";
-            pairingContainer.style.display = "block";
+        if (res.status === 500 || !res.ok) {
+            checkboxesDiv.innerHTML = `<p style="font-size:0.9em; color:var(--color-negative); padding:8px;">Philips Hue ist nicht verbunden. Bitte konfigurieren und verbinden Sie Hue zuerst in den <strong>globalen Einstellungen</strong>.</p>`;
             return;
-        }
-        if (!res.ok) {
-            throw new Error(await res.text());
         }
 
         const resources = await res.json();
         checkboxesDiv.innerHTML = "";
-        pairingContainer.style.display = "none";
 
         if (resources.length === 0) {
             checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Keine Lampen oder Räume gefunden.</p>`;
@@ -3804,9 +3695,7 @@ async function initHueFields(container, widget) {
             addSection("Szenen", scenes, selectedScenes, "hue_scene");
         }
     } catch (e) {
-        checkboxesDiv.innerHTML = "";
-        checkContainer.style.display = "none";
-        pairingContainer.style.display = "block";
+        checkboxesDiv.innerHTML = `<p style="font-size:0.9em; color:var(--color-negative); padding:8px;">Philips Hue ist nicht verbunden. Bitte konfigurieren und verbinden Sie Hue zuerst in den <strong>globalen Einstellungen</strong>.</p>`;
     }
 }
 
@@ -4043,14 +3932,8 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
         } else if (type === "mvv") {
             initMvvFields(fieldsContainer, widget);
         } else if (type === "gmail") {
-            const hint = fieldsContainer.querySelector(".gmail-redirect-hint");
-            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/google/callback`;
-            await prefillGoogleCredentials(fieldsContainer);
+            // Gmail requires no local configuration fields
         } else if (type === "hue") {
-            const hint = fieldsContainer.querySelector(".hue-redirect-hint");
-            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/hue/callback`;
-            const loginLink = fieldsContainer.querySelector("#hue-login-link");
-            if (loginLink) loginLink.href = `/api/hue/login`;
             await initHueFields(fieldsContainer, widget);
         }
 

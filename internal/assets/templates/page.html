@@ -257,10 +257,53 @@
                 <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Spotify Client Secret</label>
                 <input type="password" name="spotify_client_secret" placeholder="Your Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
             </div>
-            <div style="margin-bottom: 20px;">
+            <div style="margin-bottom: 15px;">
                 <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Spotify Redirect URL</label>
                 <input type="url" name="spotify_redirect_url" placeholder="http://localhost:8086/api/spotify/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
             </div>
+            <div style="margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
+                <a href="/api/spotify/login" class="btn btn-primary" style="display: inline-block; padding: 8px 16px; background: #1DB954; color: #fff; font-weight: bold; border-radius: 4px; text-decoration: none; font-size: 0.85em; text-align: center; border: none; cursor: pointer; transition: background 0.2s;">Spotify verbinden</a>
+                <span style="font-size: 0.75em; opacity: 0.6;">(Vor dem Klick bitte Settings speichern!)</span>
+            </div>
+
+            <!-- Google / Gmail Credentials -->
+            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Google / Gmail Credentials</h4>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Google Client ID</label>
+                <input type="text" name="google_client_id" placeholder="Your Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Google Client Secret</label>
+                <input type="password" name="google_client_secret" placeholder="Your Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Google Redirect URL</label>
+                <input type="url" name="google_redirect_url" placeholder="http://localhost:8086/api/google/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
+                <a href="/api/google/login" class="btn btn-primary" style="display: inline-block; padding: 8px 16px; background: #4285F4; color: #fff; font-weight: bold; border-radius: 4px; text-decoration: none; font-size: 0.85em; text-align: center; border: none; cursor: pointer; transition: background 0.2s;">Google verbinden</a>
+                <span style="font-size: 0.75em; opacity: 0.6;">(Vor dem Klick bitte Settings speichern!)</span>
+            </div>
+
+            <!-- Philips Hue Credentials -->
+            <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Philips Hue Credentials</h4>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Philips Hue Client ID</label>
+                <input type="text" name="hue_client_id" placeholder="Your Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Philips Hue Client Secret</label>
+                <input type="password" name="hue_client_secret" placeholder="Your Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Philips Hue Redirect URL</label>
+                <input type="url" name="hue_redirect_url" placeholder="http://localhost:8086/api/hue/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="margin-bottom: 25px; display: flex; align-items: center; gap: 10px;">
+                <a href="/api/hue/login" class="btn btn-primary" style="display: inline-block; padding: 8px 16px; background: #ffa200; color: #000; font-weight: bold; border-radius: 4px; text-decoration: none; font-size: 0.85em; text-align: center; border: none; cursor: pointer; transition: background 0.2s;">Philips Hue verbinden</a>
+                <span style="font-size: 0.75em; opacity: 0.6;">(Vor dem Klick bitte Settings speichern!)</span>
+            </div>
+
 
             <!-- Theme Aesthetics -->
             <h4 style="margin-bottom: 10px; font-size: 1.05rem; color: var(--color-primary); border-top: 1px dashed var(--color-separator); padding-top: 15px;">Theme & Aesthetics</h4>

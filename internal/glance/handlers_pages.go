@@ -18,7 +18,7 @@ func (a *Application) HandlePageRequest(w http.ResponseWriter, r *http.Request) 
 	a.configMu.RUnlock()
 
 	if !exists {
-		a.HandleNotFound(w, r)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
