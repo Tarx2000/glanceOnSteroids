@@ -223,10 +223,18 @@ func (cm *ConfigManager) SaveLayout(pageSlug string, head []string, columns [][]
 		}
 	}
 
+	cleanID := func(id string) string {
+		if idx := strings.Index(id, "["); idx != -1 {
+			id = id[:idx]
+		}
+		return strings.ReplaceAll(id, ":", "/")
+	}
+
 	// 1. Rebuild Head Widgets sequence
 	var newHeadContent []*yaml.Node
 	for _, wID := range head {
-		if node, exists := originalNodesMap[wID]; exists {
+		targetID := cleanID(wID)
+		if node, exists := originalNodesMap[targetID]; exists {
 			newHeadContent = append(newHeadContent, node)
 			delete(nodesToDelete, node)
 		}
@@ -267,7 +275,8 @@ func (cm *ConfigManager) SaveLayout(pageSlug string, head []string, columns [][]
 
 		var newColWidgets []*yaml.Node
 		for _, wID := range colWidgetsIDs {
-			if node, exists := originalNodesMap[wID]; exists {
+			targetID := cleanID(wID)
+			if node, exists := originalNodesMap[targetID]; exists {
 				newColWidgets = append(newColWidgets, node)
 				delete(nodesToDelete, node)
 			}
