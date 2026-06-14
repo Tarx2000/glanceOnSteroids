@@ -57,8 +57,6 @@ func (widget *CustomAPI) Update(ctx context.Context, services ExternalServicePro
 }
 
 func (widget *CustomAPI) RenderHTML() template.HTML {
-	widget.Lock()
-	defer widget.Unlock()
 	return template.HTML(widget.CachedHTML)
 }
 

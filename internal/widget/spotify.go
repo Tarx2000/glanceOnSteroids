@@ -38,7 +38,5 @@ func (widget *Spotify) Render() template.HTML {
 
 // IsAuthorized returns true if the Spotify account is connected/authorized.
 func (widget *Spotify) IsAuthorized() bool {
-	widget.Lock()
-	defer widget.Unlock()
 	return widget.Authorized
 }
