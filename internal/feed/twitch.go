@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,9 +90,9 @@ const twitchGqlClientId = "kimne78kx3ncx6brgo4mv6wki5h1ko"
 
 const twitchDirectoriesOperationRequestBody = `[{"operationName": "BrowsePage_AllDirectories","variables": {"limit": %d,"options": {"sort": "VIEWER_COUNT","tags": []}},"extensions": {"persistedQuery": {"version": 1,"sha256Hash": "2f67f71ba89f3c0ed26a141ec00da1defecb2303595f5cda4298169549783d9e"}}}]`
 
-func FetchTopGamesFromTwitch(exclude []string, limit int) ([]TwitchCategory, error) {
+func FetchTopGamesFromTwitch(ctx context.Context, exclude []string, limit int) ([]TwitchCategory, error) {
 	reader := strings.NewReader(fmt.Sprintf(twitchDirectoriesOperationRequestBody, len(exclude)+limit))
-	request, _ := http.NewRequest("POST", twitchGqlEndpoint, reader)
+	request, _ := http.NewRequestWithContext(ctx, "POST", twitchGqlEndpoint, reader)
 	request.Header.Add("Client-ID", twitchGqlClientId)
 	response, err := decodeJsonFromRequest[[]twitchDirectoriesOperationResponse](defaultClient, request)
 
@@ -144,13 +145,13 @@ const twitchChannelStatusOperationRequestBody = `[{"operationName":"ChannelShell
 // what the limit is for max operations per request and batch operations in
 // multiple requests if number of channels exceeds allowed limit.
 
-func fetchChannelFromTwitchTask(channel string) (TwitchChannel, error) {
+func fetchChannelFromTwitch(ctx context.Context, channel string) (TwitchChannel, error) {
 	result := TwitchChannel{
 		Login: strings.ToLower(channel),
 	}
 
 	reader := strings.NewReader(fmt.Sprintf(twitchChannelStatusOperationRequestBody, channel, channel))
-	request, _ := http.NewRequest("POST", twitchGqlEndpoint, reader)
+	request, _ := http.NewRequestWithContext(ctx, "POST", twitchGqlEndpoint, reader)
 	request.Header.Add("Client-ID", twitchGqlClientId)
 
 	response, err := decodeJsonFromRequest[[]twitchOperationResponse](defaultClient, request)
@@ -214,10 +215,12 @@ func fetchChannelFromTwitchTask(channel string) (TwitchChannel, error) {
 	return result, nil
 }
 
-func FetchChannelsFromTwitch(channelLogins []string) (TwitchChannels, error) {
+func FetchChannelsFromTwitch(ctx context.Context, channelLogins []string) (TwitchChannels, error) {
 	result := make(TwitchChannels, 0, len(channelLogins))
 
-	job := newJob(fetchChannelFromTwitchTask, channelLogins).withWorkers(10)
+	job := newJob(func(channel string) (TwitchChannel, error) {
+		return fetchChannelFromTwitch(ctx, channel)
+	}, channelLogins).withWorkers(10)
 	channels, errs, err := workerPoolDo(job)
 
 	if err != nil {

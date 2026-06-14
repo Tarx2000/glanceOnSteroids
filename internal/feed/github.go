@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,7 +30,7 @@ func parseGithubTime(t string) time.Time {
 	return parsedTime
 }
 
-func FetchLatestReleasesFromGithub(repositories []string, token string) (AppReleases, error) {
+func FetchLatestReleasesFromGithub(ctx context.Context, repositories []string, token string) (AppReleases, error) {
 	appReleases := make(AppReleases, 0, len(repositories))
 
 	if len(repositories) == 0 {
@@ -39,7 +40,7 @@ func FetchLatestReleasesFromGithub(repositories []string, token string) (AppRele
 	requests := make([]*http.Request, len(repositories))
 
 	for i, repository := range repositories {
-		request, _ := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repository), nil)
+		request, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=10", repository), nil)
 
 		if token != "" {
 			request.Header.Add("Authorization", fmt.Sprintf("Bearer %s", token))
@@ -50,7 +51,7 @@ func FetchLatestReleasesFromGithub(repositories []string, token string) (AppRele
 		requests[i] = request
 	}
 
-	task := decodeJsonFromRequestTask[[]githubReleaseResponseJson](defaultClient)
+	task := decodeJsonFromRequestTask[[]githubReleaseResponseJson](ctx, defaultClient)
 	job := newJob(task, requests).withWorkers(15)
 	responses, errs, err := workerPoolDo(job)
 
@@ -156,15 +157,15 @@ type githubTicketResponseJson struct {
 	} `json:"items"`
 }
 
-func FetchRepositoryDetailsFromGithub(repository string, token string, maxPRs int, maxIssues int) (RepositoryDetails, error) {
-	repositoryRequest, err := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s", repository), nil)
+func FetchRepositoryDetailsFromGithub(ctx context.Context, repository string, token string, maxPRs int, maxIssues int) (RepositoryDetails, error) {
+	repositoryRequest, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://api.github.com/repos/%s", repository), nil)
 
 	if err != nil {
 		return RepositoryDetails{}, fmt.Errorf("%w: could not create request with repository: %v", ErrNoContent, err)
 	}
 
-	PRsRequest, _ := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/search/issues?q=is:pr+is:open+repo:%s&per_page=%d", repository, maxPRs), nil)
-	issuesRequest, _ := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/search/issues?q=is:issue+is:open+repo:%s&per_page=%d", repository, maxIssues), nil)
+	PRsRequest, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://api.github.com/search/issues?q=is:pr+is:open+repo:%s&per_page=%d", repository, maxPRs), nil)
+	issuesRequest, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://api.github.com/search/issues?q=is:issue+is:open+repo:%s&per_page=%d", repository, maxIssues), nil)
 
 	if token != "" {
 		token = fmt.Sprintf("Bearer %s", token)

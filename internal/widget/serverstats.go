@@ -18,25 +18,47 @@ type ServerStats struct {
 	widgetBase `yaml:",inline"`
 
 	// Runtime-Daten (werden in Update() gesetzt)
-	CPUUser       int     `yaml:"-"`
-	CPUSystem     int     `yaml:"-"`
-	CPUIdle       int     `yaml:"-"`
+	CPUUser        int     `yaml:"-"`
+	CPUSystem      int     `yaml:"-"`
+	CPUIdle        int     `yaml:"-"`
 	CPUUserScale   float64 `yaml:"-"`
 	CPUSystemScale float64 `yaml:"-"`
-	RAMUsedGB     float64 `yaml:"-"`
-	RAMTotalGB    float64 `yaml:"-"`
-	RAMPercent    int     `yaml:"-"`
-	RAMScale      float64 `yaml:"-"`
-	DiskUsedGB    float64 `yaml:"-"`
-	DiskTotalGB   float64 `yaml:"-"`
-	DiskPercent   int     `yaml:"-"`
-	DiskScale     float64 `yaml:"-"`
-	DockerRunning int     `yaml:"-"`
-	DockerStopped int     `yaml:"-"`
-	DockerTotal   int     `yaml:"-"`
-	UptimeHours   int     `yaml:"-"`
-	UptimeMinutes int     `yaml:"-"`
-	UptimeDays    int     `yaml:"-"`
+	RAMUsedGB      float64 `yaml:"-"`
+	RAMTotalGB     float64 `yaml:"-"`
+	RAMPercent     int     `yaml:"-"`
+	RAMScale       float64 `yaml:"-"`
+	DiskUsedGB     float64 `yaml:"-"`
+	DiskTotalGB    float64 `yaml:"-"`
+	DiskPercent    int     `yaml:"-"`
+	DiskScale      float64 `yaml:"-"`
+	DockerRunning  int     `yaml:"-"`
+	DockerStopped  int     `yaml:"-"`
+	DockerTotal    int     `yaml:"-"`
+	UptimeHours    int     `yaml:"-"`
+	UptimeMinutes  int     `yaml:"-"`
+	UptimeDays     int     `yaml:"-"`
+}
+
+type serverStatsSnapshot struct {
+	CPUUser        int
+	CPUSystem      int
+	CPUIdle        int
+	CPUUserScale   float64
+	CPUSystemScale float64
+	RAMUsedGB      float64
+	RAMTotalGB     float64
+	RAMPercent     int
+	RAMScale       float64
+	DiskUsedGB     float64
+	DiskTotalGB    float64
+	DiskPercent    int
+	DiskScale      float64
+	DockerRunning  int
+	DockerStopped  int
+	DockerTotal    int
+	UptimeHours    int
+	UptimeMinutes  int
+	UptimeDays     int
 }
 
 func init() {
@@ -50,11 +72,35 @@ func (widget *ServerStats) Initialize() error {
 }
 
 func (widget *ServerStats) Update(ctx context.Context, services ExternalServiceProvider) {
-	widget.readCPU()
-	widget.readRAM()
-	widget.readDisk()
-	widget.readDocker()
-	widget.readUptime()
+	var snap serverStatsSnapshot
+	widget.readCPU(&snap)
+	widget.readRAM(&snap)
+	widget.readDisk(&snap)
+	widget.readDocker(&snap)
+	widget.readUptime(&snap)
+
+	widget.Lock()
+	widget.CPUUser = snap.CPUUser
+	widget.CPUSystem = snap.CPUSystem
+	widget.CPUIdle = snap.CPUIdle
+	widget.CPUUserScale = snap.CPUUserScale
+	widget.CPUSystemScale = snap.CPUSystemScale
+	widget.RAMUsedGB = snap.RAMUsedGB
+	widget.RAMTotalGB = snap.RAMTotalGB
+	widget.RAMPercent = snap.RAMPercent
+	widget.RAMScale = snap.RAMScale
+	widget.DiskUsedGB = snap.DiskUsedGB
+	widget.DiskTotalGB = snap.DiskTotalGB
+	widget.DiskPercent = snap.DiskPercent
+	widget.DiskScale = snap.DiskScale
+	widget.DockerRunning = snap.DockerRunning
+	widget.DockerStopped = snap.DockerStopped
+	widget.DockerTotal = snap.DockerTotal
+	widget.UptimeHours = snap.UptimeHours
+	widget.UptimeMinutes = snap.UptimeMinutes
+	widget.UptimeDays = snap.UptimeDays
+	widget.Unlock()
+
 	widget.canContinueUpdateAfterHandlingErr(nil)
 }
 
@@ -123,7 +169,7 @@ func calcCPUPercent(prev, curr cpuSample) (user, system, idle int) {
 }
 
 // readCPU reads real CPU usage by taking two samples 500ms apart
-func (widget *ServerStats) readCPU() {
+func (widget *ServerStats) readCPU(snap *serverStatsSnapshot) {
 	data1, err := os.ReadFile("/proc/stat")
 	if err != nil {
 		return
@@ -138,12 +184,12 @@ func (widget *ServerStats) readCPU() {
 	}
 	s2 := parseCPUSample(string(data2))
 
-	widget.CPUUser, widget.CPUSystem, widget.CPUIdle = calcCPUPercent(s1, s2)
-	widget.CPUUserScale = float64(widget.CPUUser) / 100.0
-	widget.CPUSystemScale = float64(widget.CPUSystem) / 100.0
+	snap.CPUUser, snap.CPUSystem, snap.CPUIdle = calcCPUPercent(s1, s2)
+	snap.CPUUserScale = float64(snap.CPUUser) / 100.0
+	snap.CPUSystemScale = float64(snap.CPUSystem) / 100.0
 }
 
-func (widget *ServerStats) readRAM() {
+func (widget *ServerStats) readRAM(snap *serverStatsSnapshot) {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		return
@@ -175,17 +221,17 @@ func (widget *ServerStats) readRAM() {
 		memAvailable = memFree + buffers + cached
 	}
 
-	widget.RAMTotalGB = float64(memTotal) / 1024 / 1024
+	snap.RAMTotalGB = float64(memTotal) / 1024 / 1024
 	used := memTotal - memAvailable
 	if used < 0 {
 		used = 0
 	}
-	widget.RAMUsedGB = float64(used) / 1024 / 1024
-	widget.RAMPercent = (used * 100) / memTotal
-	widget.RAMScale = float64(widget.RAMPercent) / 100.0
+	snap.RAMUsedGB = float64(used) / 1024 / 1024
+	snap.RAMPercent = (used * 100) / memTotal
+	snap.RAMScale = float64(snap.RAMPercent) / 100.0
 }
 
-func (widget *ServerStats) readDisk() {
+func (widget *ServerStats) readDisk(snap *serverStatsSnapshot) {
 	cmd := exec.Command("df", "-B1", "/")
 	out, err := cmd.Output()
 	if err != nil {
@@ -205,39 +251,39 @@ func (widget *ServerStats) readDisk() {
 			total, _ := strconv.ParseInt(fields[1], 10, 64)
 			used, _ := strconv.ParseInt(fields[2], 10, 64)
 			if total > 0 {
-			widget.DiskTotalGB = float64(total) / 1024 / 1024 / 1024
-			widget.DiskUsedGB = float64(used) / 1024 / 1024 / 1024
-			widget.DiskPercent = int((used * 100) / total)
-			widget.DiskScale = float64(widget.DiskPercent) / 100.0
+				snap.DiskTotalGB = float64(total) / 1024 / 1024 / 1024
+				snap.DiskUsedGB = float64(used) / 1024 / 1024 / 1024
+				snap.DiskPercent = int((used * 100) / total)
+				snap.DiskScale = float64(snap.DiskPercent) / 100.0
+			}
+			return
 		}
-		return
 	}
 }
-}
 
-func (widget *ServerStats) readDocker() {
+func (widget *ServerStats) readDocker(snap *serverStatsSnapshot) {
 	// Running containers
 	cmd := exec.Command("docker", "ps", "-q")
 	out, err := cmd.Output()
 	if err == nil {
-		widget.DockerRunning = countNonEmptyLines(string(out))
+		snap.DockerRunning = countNonEmptyLines(string(out))
 	} else {
-		widget.DockerRunning = -1
+		snap.DockerRunning = -1
 	}
 
 	// All containers
 	cmd = exec.Command("docker", "ps", "-aq")
 	out, err = cmd.Output()
 	if err == nil {
-		widget.DockerTotal = countNonEmptyLines(string(out))
+		snap.DockerTotal = countNonEmptyLines(string(out))
 	} else {
-		widget.DockerTotal = -1
+		snap.DockerTotal = -1
 	}
 
-	if widget.DockerRunning >= 0 && widget.DockerTotal >= 0 {
-		widget.DockerStopped = widget.DockerTotal - widget.DockerRunning
+	if snap.DockerRunning >= 0 && snap.DockerTotal >= 0 {
+		snap.DockerStopped = snap.DockerTotal - snap.DockerRunning
 	} else {
-		widget.DockerStopped = -1
+		snap.DockerStopped = -1
 	}
 }
 
@@ -249,7 +295,7 @@ func countNonEmptyLines(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
-func (widget *ServerStats) readUptime() {
+func (widget *ServerStats) readUptime(snap *serverStatsSnapshot) {
 	data, err := os.ReadFile("/proc/uptime")
 	if err != nil {
 		return
@@ -260,7 +306,7 @@ func (widget *ServerStats) readUptime() {
 	}
 	seconds, _ := strconv.ParseFloat(fields[0], 64)
 	totalMinutes := int(seconds) / 60
-	widget.UptimeDays = totalMinutes / 60 / 24
-	widget.UptimeHours = (totalMinutes / 60) % 24
-	widget.UptimeMinutes = totalMinutes % 60
+	snap.UptimeDays = totalMinutes / 60 / 24
+	snap.UptimeHours = (totalMinutes / 60) % 24
+	snap.UptimeMinutes = totalMinutes % 60
 }

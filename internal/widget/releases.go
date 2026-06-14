@@ -39,7 +39,7 @@ func (widget *Releases) Initialize() error {
 }
 
 func (widget *Releases) Update(ctx context.Context, services ExternalServiceProvider) {
-	releases, err := feed.FetchLatestReleasesFromGithub(widget.Repositories, string(widget.Token))
+	releases, err := feed.FetchLatestReleasesFromGithub(ctx, widget.Repositories, string(widget.Token))
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return

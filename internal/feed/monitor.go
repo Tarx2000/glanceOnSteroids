@@ -3,6 +3,7 @@ package feed
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 )
@@ -19,7 +20,7 @@ func getSiteStatusTask(request *http.Request) (SiteStatus, error) {
 	defer cancel()
 	request = request.WithContext(ctx)
 	start := time.Now()
-	response, err := http.DefaultClient.Do(request)
+	response, err := defaultClient.Do(request)
 	took := time.Since(start)
 	status := SiteStatus{ResponseTime: took}
 
@@ -35,6 +36,7 @@ func getSiteStatusTask(request *http.Request) (SiteStatus, error) {
 	defer response.Body.Close()
 
 	status.Code = response.StatusCode
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 
 	return status, nil
 }

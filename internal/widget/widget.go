@@ -20,12 +20,28 @@ import (
 
 var GlobalTimezone string
 
+type GmailEmail struct {
+	Subject string `json:"subject"`
+	Sender  string `json:"sender"`
+	Date    string `json:"date"`
+}
+
+type HueResource struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"` // room, light, scene
+	On   bool   `json:"on"`
+}
+
 // ExternalServiceProvider defines the interface for third-party integrations
 // such as Spotify and Google Calendar to bypass circular dependencies.
 type ExternalServiceProvider interface {
 	SpotifyAuthorized() bool
 	GoogleAuthorized() bool
 	FetchGoogleEvents(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]GoogleCalendarEvent, error)
+	FetchGmailUnreadCount(ctx context.Context) (int, []GmailEmail, error)
+	HueAuthorized() bool
+	FetchHueStatuses(ctx context.Context, rooms, lights, scenes []string) ([]HueResource, error)
 }
 
 var registry = make(map[string]func() Widget)

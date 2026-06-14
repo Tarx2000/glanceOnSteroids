@@ -81,7 +81,7 @@ func (widget *NeuralWatt) Initialize() error {
 func (widget *NeuralWatt) Update(ctx context.Context, services ExternalServiceProvider) {
 	apiKey := string(widget.ApiKey)
 
-	summary, err := feed.FetchNeuralWattSummary(apiKey)
+	summary, err := feed.FetchNeuralWattSummary(ctx, apiKey)
 	if err != nil {
 		widget.canContinueUpdateAfterHandlingErr(err)
 		return
@@ -117,7 +117,7 @@ func (widget *NeuralWatt) Update(ctx context.Context, services ExternalServicePr
 	endDate := nowUTC.Format("2006-01-02")
 	startDate := nowUTC.AddDate(0, 0, -30).Format("2006-01-02")
 
-	energy, err := feed.FetchNeuralWattEnergy(apiKey, startDate, endDate)
+	energy, err := feed.FetchNeuralWattEnergy(ctx, apiKey, startDate, endDate)
 	if err != nil {
 		widget.canContinueUpdateAfterHandlingErr(err)
 		return

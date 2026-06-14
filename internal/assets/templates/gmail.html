@@ -1,0 +1,27 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+{{ if not .Authorized }}
+<div class="gmail-unauthorized" style="text-align: center; padding: 20px 10px;">
+    <p style="font-size: 0.9em; opacity: 0.8; margin-bottom: 12px;">Google-Konto nicht verbunden.</p>
+    <a href="/api/google/login" class="btn btn-primary" style="display: inline-block; padding: 8px 16px; background: var(--color-primary); color: #fff; border-radius: 4px; text-decoration: none; font-weight: bold; font-size: 0.9em;">Mit Google verbinden</a>
+</div>
+{{ else }}
+<div class="gmail-container" style="display: flex; align-items: center; justify-content: center; padding: 15px 10px; gap: 20px;">
+    <div class="gmail-icon-wrapper" style="position: relative;">
+        <!-- Elegant Envelope SVG -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: var(--color-text-highlight); opacity: 0.95;">
+            <rect x="2" y="4" width="20" height="16" rx="2" />
+            <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+        </svg>
+        {{ if gt .UnreadCount 0 }}
+        <span class="gmail-badge" style="position: absolute; top: -5px; right: -8px; background: var(--color-negative); color: #fff; font-size: 0.8rem; font-weight: bold; border-radius: 10px; padding: 2px 7px; min-width: 18px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">{{ .UnreadCount }}</span>
+        {{ end }}
+    </div>
+    <div class="gmail-info" style="display: flex; flex-direction: column; justify-content: center;">
+        <span style="font-size: 1.15rem; font-weight: bold; color: var(--color-text-highlight);">{{ .UnreadCount }} ungelesen</span>
+        <span style="font-size: 0.8rem; opacity: 0.7;">letzte 7 Tage</span>
+    </div>
+</div>
+{{ end }}
+{{ end }}

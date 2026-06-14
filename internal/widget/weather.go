@@ -55,7 +55,7 @@ func (widget *Weather) Update(ctx context.Context, services ExternalServiceProvi
 
 	if place == nil {
 		var err error
-		place, err = feed.FetchPlaceFromName(widget.Location)
+		place, err = feed.FetchPlaceFromName(ctx, widget.Location)
 		if err != nil {
 			widget.withError(err).scheduleEarlyUpdate()
 			return
@@ -65,7 +65,7 @@ func (widget *Weather) Update(ctx context.Context, services ExternalServiceProvi
 		widget.Unlock()
 	}
 
-	weather, err := feed.FetchWeatherForPlace(place, widget.Units)
+	weather, err := feed.FetchWeatherForPlace(ctx, place, widget.Units)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return

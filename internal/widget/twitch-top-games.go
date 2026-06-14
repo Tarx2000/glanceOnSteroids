@@ -36,7 +36,7 @@ func (widget *TwitchGames) Initialize() error {
 }
 
 func (widget *TwitchGames) Update(ctx context.Context, services ExternalServiceProvider) {
-	categories, err := feed.FetchTopGamesFromTwitch(widget.Exclude, widget.Limit)
+	categories, err := feed.FetchTopGamesFromTwitch(ctx, widget.Exclude, widget.Limit)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return

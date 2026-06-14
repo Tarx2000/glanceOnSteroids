@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -39,15 +40,15 @@ func parseYoutubeFeedTime(t string) time.Time {
 	return parsedTime
 }
 
-func FetchYoutubeChannelUploads(channelIds []string, videoUrlTemplate string) (Videos, error) {
+func FetchYoutubeChannelUploads(ctx context.Context, channelIds []string, videoUrlTemplate string) (Videos, error) {
 	requests := make([]*http.Request, 0, len(channelIds))
 
 	for i := range channelIds {
-		request, _ := http.NewRequest("GET", "https://www.youtube.com/feeds/videos.xml?channel_id="+channelIds[i], nil)
+		request, _ := http.NewRequestWithContext(ctx, "GET", "https://www.youtube.com/feeds/videos.xml?channel_id="+channelIds[i], nil)
 		requests = append(requests, request)
 	}
 
-	job := newJob(decodeXmlFromRequestTask[youtubeFeedResponseXml](defaultClient), requests).withWorkers(30)
+	job := newJob(decodeXmlFromRequestTask[youtubeFeedResponseXml](ctx, defaultClient), requests).withWorkers(30)
 
 	responses, errs, err := workerPoolDo(job)
 

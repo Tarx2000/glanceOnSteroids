@@ -67,8 +67,9 @@ func decodeJsonFromRequest[T any](client RequestDoer, request *http.Request) (T,
 	return result, nil
 }
 
-func decodeJsonFromRequestTask[T any](client RequestDoer) func(*http.Request) (T, error) {
+func decodeJsonFromRequestTask[T any](ctx context.Context, client RequestDoer) func(*http.Request) (T, error) {
 	return func(request *http.Request) (T, error) {
+		request = request.WithContext(ctx)
 		return decodeJsonFromRequest[T](client, request)
 	}
 }
@@ -108,8 +109,9 @@ func decodeXmlFromRequest[T any](client RequestDoer, request *http.Request) (T, 
 	return result, nil
 }
 
-func decodeXmlFromRequestTask[T any](client RequestDoer) func(*http.Request) (T, error) {
+func decodeXmlFromRequestTask[T any](ctx context.Context, client RequestDoer) func(*http.Request) (T, error) {
 	return func(request *http.Request) (T, error) {
+		request = request.WithContext(ctx)
 		return decodeXmlFromRequest[T](client, request)
 	}
 }
@@ -167,8 +169,8 @@ func workerPoolDo[I any, O any](job *workerPoolJob[I, O]) ([]O, []error, error) 
 		return results, errs, nil
 	}
 
-	tasksQueue := make(chan *workerPoolTask[I, O])
-	resultsQueue := make(chan *workerPoolTask[I, O])
+	tasksQueue := make(chan *workerPoolTask[I, O], job.workers)
+	resultsQueue := make(chan *workerPoolTask[I, O], job.workers)
 
 	var wg sync.WaitGroup
 

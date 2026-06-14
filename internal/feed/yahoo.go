@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -26,16 +27,16 @@ type stockResponseJson struct {
 
 const stockChartDays = 21
 
-func FetchStocksDataFromYahoo(stockRequests Stocks) (Stocks, error) {
+func FetchStocksDataFromYahoo(ctx context.Context, stockRequests Stocks) (Stocks, error) {
 	requests := make([]*http.Request, 0, len(stockRequests))
 
 	for i := range stockRequests {
-		request, _ := http.NewRequest("GET", fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?range=1mo&interval=1d", stockRequests[i].Symbol), nil)
+		request, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://query1.finance.yahoo.com/v8/finance/chart/%s?range=1mo&interval=1d", stockRequests[i].Symbol), nil)
 		addBrowserUserAgentHeader(request)
 		requests = append(requests, request)
 	}
 
-	job := newJob(decodeJsonFromRequestTask[stockResponseJson](defaultClient), requests)
+	job := newJob(decodeJsonFromRequestTask[stockResponseJson](ctx, defaultClient), requests)
 	responses, errs, err := workerPoolDo(job)
 
 	if err != nil {

@@ -26,6 +26,12 @@ type GoogleConfig struct {
 	RedirectURL  string `yaml:"redirect-url"`
 }
 
+type HueConfig struct {
+	ClientID     string `yaml:"client-id"`
+	ClientSecret string `yaml:"client-secret"`
+	RedirectURL  string `yaml:"redirect-url"`
+}
+
 type Config struct {
 	Branding BrandingConfig `yaml:"branding"`
 	Server   Server         `yaml:"server"`
@@ -33,6 +39,7 @@ type Config struct {
 	Pages    []Page         `yaml:"pages"`
 	Spotify  SpotifyConfig  `yaml:"spotify"`
 	Google   GoogleConfig   `yaml:"google"`
+	Hue      HueConfig      `yaml:"hue"`
 }
 
 func NewConfigFromYml(contents io.Reader) (*Config, error) {

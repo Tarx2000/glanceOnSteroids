@@ -43,7 +43,7 @@ func (widget *HackerNews) Initialize() error {
 }
 
 func (widget *HackerNews) Update(ctx context.Context, services ExternalServiceProvider) {
-	posts, err := feed.FetchHackerNewsPosts(widget.SortBy, 40, widget.CommentsUrlTemplate)
+	posts, err := feed.FetchHackerNewsPosts(ctx, widget.SortBy, 40, widget.CommentsUrlTemplate)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return

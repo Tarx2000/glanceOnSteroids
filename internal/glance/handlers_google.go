@@ -22,7 +22,7 @@ func (a *Application) HandleGoogleLogin(w http.ResponseWriter, r *http.Request) 
 
 	redirectURI := getGoogleRedirectURI(r)
 	slog.Info("[Google] Initiating OAuth login", "redirect_uri", redirectURI)
-	scope := "https://www.googleapis.com/auth/calendar.readonly"
+	scope := "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/gmail.readonly"
 	authURL := fmt.Sprintf("https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=%s&redirect_uri=%s&scope=%s&access_type=offline&prompt=consent",
 		url.QueryEscape(googleConfig.ClientID),
 		url.QueryEscape(redirectURI),
@@ -50,7 +50,7 @@ func (a *Application) HandleGoogleCallback(w http.ResponseWriter, r *http.Reques
 	data.Set("client_id", googleConfig.ClientID)
 	data.Set("client_secret", googleConfig.ClientSecret)
 
-	resp, err := http.PostForm(tokenURL, data)
+	resp, err := googleHTTPClient.PostForm(tokenURL, data)
 	if err != nil {
 		slog.Error("[Google] Token request failed", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

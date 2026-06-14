@@ -272,6 +272,10 @@ async function fetchPageContents(pageSlug) {
 }
 
 function setupCarousels() {
+    if (window.carouselObservers) {
+        window.carouselObservers.forEach(obs => obs.disconnect());
+    }
+    window.carouselObservers = [];
     const carouselElements = document.getElementsByClassName("carousel-container");
 
     for (let i = 0; i < carouselElements.length; i++) {
@@ -302,6 +306,7 @@ function setupCarousels() {
             determineSideCutoffsRateLimited();
         });
         resizeObserver.observe(itemsContainer);
+        window.carouselObservers.push(resizeObserver);
 
         determineSideCutoffs();
     }
@@ -350,29 +355,43 @@ function updateRelativeTimeForElements(elements) {
 function setupDynamicRelativeTime() {
     const updateElementsAndTimestamp = () => {
         const elements = document.querySelectorAll("[data-dynamic-relative-time]");
+        if (elements.length === 0) {
+            if (window.relativeTimeTimeout) {
+                clearInterval(window.relativeTimeTimeout);
+                window.relativeTimeTimeout = null;
+                window.relativeTimeIntervalInitialized = false;
+            }
+            return;
+        }
         updateRelativeTimeForElements(elements);
         window.lastRelativeUpdateTime = Date.now();
     };
 
-    updateElementsAndTimestamp();
-
     if (!window.relativeTimeIntervalInitialized) {
+        const elements = document.querySelectorAll("[data-dynamic-relative-time]");
+        if (elements.length === 0) return;
+
         window.relativeTimeIntervalInitialized = true;
+        updateElementsAndTimestamp();
+
         const updateInterval = 60 * 1000;
         window.lastRelativeUpdateTime = Date.now();
 
         const scheduleRepeatingUpdate = () => setInterval(updateElementsAndTimestamp, updateInterval);
 
         if (document.hidden === undefined) {
-            scheduleRepeatingUpdate();
+            window.relativeTimeTimeout = scheduleRepeatingUpdate();
             return;
         }
 
-        let timeout = scheduleRepeatingUpdate();
+        window.relativeTimeTimeout = scheduleRepeatingUpdate();
 
         document.addEventListener("visibilitychange", () => {
             if (document.hidden) {
-                clearInterval(timeout);
+                if (window.relativeTimeTimeout) {
+                    clearInterval(window.relativeTimeTimeout);
+                    window.relativeTimeTimeout = null;
+                }
                 return;
             }
 
@@ -380,13 +399,13 @@ function setupDynamicRelativeTime() {
 
             if (delta >= updateInterval) {
                 updateElementsAndTimestamp();
-                timeout = scheduleRepeatingUpdate();
+                window.relativeTimeTimeout = scheduleRepeatingUpdate();
                 return;
             }
 
-            timeout = setTimeout(() => {
+            window.relativeTimeTimeout = setTimeout(() => {
                 updateElementsAndTimestamp();
-                timeout = scheduleRepeatingUpdate();
+                window.relativeTimeTimeout = scheduleRepeatingUpdate();
             }, updateInterval - delta);
         });
     }
@@ -487,7 +506,10 @@ function openSpotifyWidgetSettings() {
 function updateSpotifyWidget(data) {
     console.log("[Spotify] updateSpotifyWidget called with:", data);
     const player = document.getElementById("spotify-player");
-    if (!player) return;
+    if (!player) {
+        clearInterval(spotifyInterval);
+        return;
+    }
 
     const loginPrompt = document.getElementById("spotify-login-prompt");
     const playerContent = document.getElementById("spotify-player-content");
@@ -1387,7 +1409,10 @@ const defaultCacheDurations = {
     "twitch-channels": "10m",
     "twitch-top-games": "10m",
     videos: "1h",
-    weather: "1h"
+    weather: "1h",
+    mvv: "2m",
+    gmail: "10m",
+    hue: "1m"
 };
 
 function parseDurationToHoursMinutes(durationStr) {
@@ -1892,6 +1917,58 @@ const widgetFieldTemplates = {
     `,
     group: `
         <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 10px;">Group widgets together using tabs. Add nested widgets via the layout editor after creating this group.</p>
+    `,
+    mvv: `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Haltestellensuche (München)</label>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <input type="text" id="mvv-search-input" placeholder="z. B. Marienplatz" style="flex: 1; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            <button type="button" id="btn-mvv-search" style="padding: 8px 14px; background: var(--color-primary); border: none; border-radius: 4px; color: #fff; font-weight: bold; cursor: pointer; font-family: inherit;">Suchen</button>
+        </div>
+        <div id="mvv-search-results" style="display: none; margin-bottom: 12px;">
+            <label style="display: block; margin-bottom: 5px; font-size: 0.85em; opacity: 0.85;">Suchergebnisse</label>
+            <select id="mvv-results-select" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;"></select>
+        </div>
+        <input type="hidden" name="station-id" id="mvv-station-id-hidden" />
+        <input type="hidden" name="station-name" id="mvv-station-name-hidden" />
+        
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Anzahl Abfahrten</label>
+        <input type="number" name="limit" value="4" min="1" max="20" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+        
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Verkehrsmittel filter</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-sbahn" checked /> S-Bahn</label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-ubahn" checked /> U-Bahn</label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-bus" checked /> Bus</label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-tram" checked /> Tram</label>
+        </div>
+    `,
+    gmail: `
+        <div style="font-size: 0.8em; color: var(--color-primary); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-primary); padding: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.2);" class="gmail-redirect-hint">Redirect URI: http://localhost:8086/api/google/callback</div>
+        <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 12px;">Nutzt die globalen Google OAuth-Zugangsdaten. Falls noch nicht geschehen, trage diese unten ein.</p>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client ID (Optional)</label>
+        <input type="text" name="google_client_id" placeholder="Google Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Client Secret (Optional)</label>
+        <input type="password" name="google_client_secret" placeholder="Google Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Google Redirect URL (Optional)</label>
+        <input type="url" name="google_redirect_url" placeholder="http://localhost:8086/api/google/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+    `,
+    hue: `
+        <div style="font-size: 0.8em; color: var(--color-primary); margin-bottom: 12px; line-height: 1.4; border: 1px solid var(--color-primary); padding: 8px; border-radius: 4px; background: rgba(0, 0, 0, 0.2);" class="hue-redirect-hint">Redirect URI: http://localhost:8086/api/hue/callback</div>
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Philips Hue Client ID</label>
+        <input type="text" name="hue_client_id" placeholder="Your Client ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Philips Hue Client Secret</label>
+        <input type="password" name="hue_client_secret" placeholder="Your Client Secret" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Philips Hue Redirect URL</label>
+        <input type="url" name="hue_redirect_url" placeholder="http://localhost:8086/api/hue/callback" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 15px;" />
+        
+        <div id="hue-pairing-container" style="display: none; margin-bottom: 15px;">
+            <a href="/api/hue/login" id="hue-login-link" style="display: inline-block; padding: 8px 12px; background: #ffa200; color: #000; font-weight: bold; border-radius: 4px; text-decoration: none; font-size: 0.85em; text-align: center;">Verbindung herstellen (OAuth + Pairing)</a>
+        </div>
+        
+        <div id="hue-resources-container" style="display: none; margin-bottom: 10px;">
+            <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Räume / Lampen / Szenen auswählen</label>
+            <div id="hue-resources-checkboxes" style="max-height: 200px; overflow-y: auto; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
     `
 };
 
@@ -1973,6 +2050,17 @@ function setupAddWidgetModal() {
         initDynamicFields(fieldsContainer, type);
         if (type === "calendar") {
             initGoogleCalendarFields(fieldsContainer);
+        } else if (type === "mvv") {
+            initMvvFields(fieldsContainer);
+        } else if (type === "gmail") {
+            const hint = fieldsContainer.querySelector(".gmail-redirect-hint");
+            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/google/callback`;
+        } else if (type === "hue") {
+            const hint = fieldsContainer.querySelector(".hue-redirect-hint");
+            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/hue/callback`;
+            const loginLink = fieldsContainer.querySelector("#hue-login-link");
+            if (loginLink) loginLink.href = `/api/hue/login`;
+            initHueFields(fieldsContainer);
         }
     });
 
@@ -2250,6 +2338,17 @@ function setupAddWidgetModal() {
         }
         if (type === "calendar") {
             properties["calendars"] = Array.from(formData.getAll("google_calendar_id")).filter(Boolean);
+        }
+        if (type === "mvv") {
+            properties["show-sbahn"] = form.elements["show-sbahn"] ? form.elements["show-sbahn"].checked : true;
+            properties["show-ubahn"] = form.elements["show-ubahn"] ? form.elements["show-ubahn"].checked : true;
+            properties["show-bus"] = form.elements["show-bus"] ? form.elements["show-bus"].checked : true;
+            properties["show-tram"] = form.elements["show-tram"] ? form.elements["show-tram"].checked : true;
+        }
+        if (type === "hue") {
+            properties["rooms"] = Array.from(formData.getAll("hue_room")).filter(Boolean);
+            properties["lights"] = Array.from(formData.getAll("hue_light")).filter(Boolean);
+            properties["scenes"] = Array.from(formData.getAll("hue_scene")).filter(Boolean);
         }
 
         const response = await fetch("/api/widgets/add", {
@@ -2902,7 +3001,14 @@ function setupSpacingDesigner() {
 function setupClocks() {
     const updateClocks = () => {
         const clocks = document.querySelectorAll(".clock-widget");
-        if (clocks.length === 0) return;
+        if (clocks.length === 0) {
+            if (window.clockIntervalId) {
+                clearInterval(window.clockIntervalId);
+                window.clockIntervalId = null;
+                window.clockIntervalInitialized = false;
+            }
+            return;
+        }
 
         const now = new Date();
         clocks.forEach(clock => {
@@ -2932,7 +3038,7 @@ function setupClocks() {
     updateClocks();
     if (!window.clockIntervalInitialized) {
         window.clockIntervalInitialized = true;
-        setInterval(updateClocks, 1000);
+        window.clockIntervalId = setInterval(updateClocks, 1000);
     }
 }
 
@@ -3490,6 +3596,213 @@ async function initGoogleCalendarFields(container, widget) {
     }
 }
 
+function initMvvFields(container, widget) {
+    const searchInput = container.querySelector("#mvv-search-input");
+    const searchBtn = container.querySelector("#btn-mvv-search");
+    const resultsDiv = container.querySelector("#mvv-search-results");
+    const resultsSelect = container.querySelector("#mvv-results-select");
+    const idHidden = container.querySelector("#mvv-station-id-hidden");
+    const nameHidden = container.querySelector("#mvv-station-name-hidden");
+
+    if (!searchInput || !searchBtn || !resultsDiv || !resultsSelect || !idHidden || !nameHidden) return;
+
+    if (widget) {
+        idHidden.value = widget["station-id"] || "";
+        nameHidden.value = widget["station-name"] || "";
+        searchInput.value = widget["station-name"] || "";
+    }
+
+    const performSearch = async () => {
+        const query = searchInput.value.trim();
+        if (!query) return;
+
+        searchBtn.disabled = true;
+        searchBtn.textContent = "Lade...";
+
+        try {
+            const res = await fetch(`/api/mvv/search?query=${encodeURIComponent(query)}`);
+            if (!res.ok) throw new Error("Search failed");
+            const items = await res.json();
+
+            resultsSelect.innerHTML = "";
+            if (!items || items.length === 0) {
+                resultsSelect.appendChild(new Option("Keine Haltestelle gefunden", ""));
+                resultsDiv.style.display = "block";
+                idHidden.value = "";
+                nameHidden.value = "";
+            } else {
+                items.forEach(item => {
+                    resultsSelect.appendChild(new Option(item.name, item.id));
+                });
+                resultsDiv.style.display = "block";
+                idHidden.value = resultsSelect.value;
+                nameHidden.value = resultsSelect.options[resultsSelect.selectedIndex].text;
+            }
+        } catch (e) {
+            console.error(e);
+            resultsSelect.innerHTML = "";
+            resultsSelect.appendChild(new Option("Fehler bei der Suche", ""));
+            resultsDiv.style.display = "block";
+        } finally {
+            searchBtn.disabled = false;
+            searchBtn.textContent = "Suchen";
+        }
+    };
+
+    searchBtn.addEventListener("click", performSearch);
+    searchInput.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            performSearch();
+        }
+    });
+
+    resultsSelect.addEventListener("change", () => {
+        idHidden.value = resultsSelect.value;
+        nameHidden.value = resultsSelect.options[resultsSelect.selectedIndex].text;
+    });
+}
+
+async function initHueFields(container, widget) {
+    const pairingContainer = container.querySelector("#hue-pairing-container");
+    const checkContainer = container.querySelector("#hue-resources-container");
+    const checkboxesDiv = container.querySelector("#hue-resources-checkboxes");
+
+    if (!pairingContainer || !checkContainer || !checkboxesDiv) return;
+
+    checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Lade Ressourcen...</p>`;
+    checkContainer.style.display = "block";
+
+    try {
+        const res = await fetch("/api/hue/resources");
+        if (res.status === 500) {
+            checkboxesDiv.innerHTML = "";
+            checkContainer.style.display = "none";
+            pairingContainer.style.display = "block";
+            return;
+        }
+        if (!res.ok) {
+            throw new Error(await res.text());
+        }
+
+        const resources = await res.json();
+        checkboxesDiv.innerHTML = "";
+        pairingContainer.style.display = "none";
+
+        if (resources.length === 0) {
+            checkboxesDiv.innerHTML = `<p style="font-size:0.85em; opacity:0.6; padding:4px;">Keine Lampen oder Räume gefunden.</p>`;
+        } else {
+            const selectedRooms = widget ? (widget.rooms || []) : [];
+            const selectedLights = widget ? (widget.lights || []) : [];
+            const selectedScenes = widget ? (widget.scenes || []) : [];
+
+            const rooms = resources.filter(r => r.type === "room");
+            const lights = resources.filter(r => r.type === "light");
+            const scenes = resources.filter(r => r.type === "scene");
+
+            const addSection = (title, items, selectedList, inputName) => {
+                if (items.length === 0) return;
+                const secHeader = document.createElement("div");
+                secHeader.style.cssText = "font-weight:bold; font-size:0.82em; opacity:0.8; margin-top:8px; border-bottom:1px solid rgba(255,255,255,0.08); padding-bottom:3px; margin-bottom:5px;";
+                secHeader.textContent = title;
+                checkboxesDiv.appendChild(secHeader);
+
+                items.forEach(item => {
+                    const checked = selectedList.includes(item.id) ? "checked" : "";
+                    const label = document.createElement("label");
+                    label.style.cssText = "display: flex; align-items: center; gap: 8px; font-size: 0.85em; margin-top: 4px; cursor: pointer; user-select: none; color: inherit;";
+                    label.innerHTML = `
+                        <input type="checkbox" name="${inputName}" value="${item.id}" ${checked} style="cursor: pointer;" />
+                        <span>${item.name}</span>
+                    `;
+                    checkboxesDiv.appendChild(label);
+                });
+            };
+
+            addSection("Räume", rooms, selectedRooms, "hue_room");
+            addSection("Lampen", lights, selectedLights, "hue_light");
+            addSection("Szenen", scenes, selectedScenes, "hue_scene");
+        }
+    } catch (e) {
+        checkboxesDiv.innerHTML = "";
+        checkContainer.style.display = "none";
+        pairingContainer.style.display = "block";
+    }
+}
+
+function setupHueControls() {
+    document.addEventListener("click", async (e) => {
+        const toggleBtn = e.target.closest(".hue-toggle-btn");
+        const sceneBtn = e.target.closest(".hue-control-scene");
+
+        if (toggleBtn) {
+            const id = toggleBtn.getAttribute("data-hue-id");
+            const rtype = toggleBtn.getAttribute("data-hue-type");
+            const currentState = toggleBtn.getAttribute("data-hue-state") === "true";
+            const newState = !currentState;
+
+            toggleBtn.setAttribute("data-hue-state", newState ? "true" : "false");
+            toggleBtn.textContent = newState ? "AN" : "AUS";
+            toggleBtn.style.background = newState ? "var(--color-primary)" : "rgba(255,255,255,0.08)";
+            toggleBtn.style.color = newState ? "#fff" : "inherit";
+            if (newState) {
+                toggleBtn.style.boxShadow = "0 0 10px rgba(var(--color-primary-rgb, 0, 122, 255), 0.35)";
+            } else {
+                toggleBtn.style.boxShadow = "none";
+            }
+
+            try {
+                const res = await fetch("/api/hue/control", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: id, type: rtype, on: newState })
+                });
+                if (!res.ok) {
+                    throw new Error("Hue control failed");
+                }
+            } catch (err) {
+                console.error(err);
+                showToast("Steuerung fehlgeschlagen", "error");
+                toggleBtn.setAttribute("data-hue-state", currentState ? "true" : "false");
+                toggleBtn.textContent = currentState ? "AN" : "AUS";
+                toggleBtn.style.background = currentState ? "var(--color-primary)" : "rgba(255,255,255,0.08)";
+                toggleBtn.style.color = currentState ? "#fff" : "inherit";
+                if (currentState) {
+                    toggleBtn.style.boxShadow = "0 0 10px rgba(var(--color-primary-rgb, 0, 122, 255), 0.35)";
+                } else {
+                    toggleBtn.style.boxShadow = "none";
+                }
+            }
+            return;
+        }
+
+        if (sceneBtn) {
+            const id = sceneBtn.getAttribute("data-hue-id");
+            const rtype = sceneBtn.getAttribute("data-hue-type");
+
+            sceneBtn.style.transform = "scale(0.97)";
+            setTimeout(() => {
+                sceneBtn.style.transform = "";
+            }, 100);
+
+            try {
+                const res = await fetch("/api/hue/control", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: id, type: rtype, on: true })
+                });
+                if (!res.ok) {
+                    throw new Error("Scene activation failed");
+                }
+                showToast("Szene aktiviert", "success");
+            } catch (err) {
+                console.error(err);
+                showToast("Aktivierung fehlgeschlagen", "error");
+            }
+        }
+    });
+}
+
 /**
  * Appends a single RSS Feed input card with URL, Title, and collapsible Advanced settings.
  */
@@ -3647,6 +3960,17 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
         initDynamicFields(fieldsContainer, type, widget);
         if (type === "calendar") {
             await initGoogleCalendarFields(fieldsContainer, widget);
+        } else if (type === "mvv") {
+            initMvvFields(fieldsContainer, widget);
+        } else if (type === "gmail") {
+            const hint = fieldsContainer.querySelector(".gmail-redirect-hint");
+            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/google/callback`;
+        } else if (type === "hue") {
+            const hint = fieldsContainer.querySelector(".hue-redirect-hint");
+            if (hint) hint.textContent = `Redirect URI: ${window.location.origin}/api/hue/callback`;
+            const loginLink = fieldsContainer.querySelector("#hue-login-link");
+            if (loginLink) loginLink.href = `/api/hue/login`;
+            await initHueFields(fieldsContainer, widget);
         }
 
         const hideTitleCb = fieldsContainer.querySelector('[name="hide-title"]');
@@ -3664,7 +3988,7 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
 
 function prefillWidgetFields(container, type, widget) {
     for (const key in widget) {
-        if (key === "type" || key === "sites" || key === "groups" || key === "feeds" || key === "symbols" || key === "markets" || key === "stocks" || key === "channels" || key === "repositories" || key === "exclude" || key === "timezones" || key === "playlists") continue;
+        if (key === "type" || key === "sites" || key === "groups" || key === "feeds" || key === "symbols" || key === "markets" || key === "stocks" || key === "channels" || key === "repositories" || key === "exclude" || key === "timezones" || key === "playlists" || key === "rooms" || key === "lights" || key === "scenes") continue;
         const val = widget[key];
 
         const inputs = container.querySelectorAll(`[name="${key}"]`);
@@ -3962,6 +4286,17 @@ function setupEditWidgetModal() {
         if (type === "calendar") {
             properties["calendars"] = Array.from(formData.getAll("google_calendar_id")).filter(Boolean);
         }
+        if (type === "mvv") {
+            properties["show-sbahn"] = form.elements["show-sbahn"] ? form.elements["show-sbahn"].checked : true;
+            properties["show-ubahn"] = form.elements["show-ubahn"] ? form.elements["show-ubahn"].checked : true;
+            properties["show-bus"] = form.elements["show-bus"] ? form.elements["show-bus"].checked : true;
+            properties["show-tram"] = form.elements["show-tram"] ? form.elements["show-tram"].checked : true;
+        }
+        if (type === "hue") {
+            properties["rooms"] = Array.from(formData.getAll("hue_room")).filter(Boolean);
+            properties["lights"] = Array.from(formData.getAll("hue_light")).filter(Boolean);
+            properties["scenes"] = Array.from(formData.getAll("hue_scene")).filter(Boolean);
+        }
 
         const nestedIdx = nestedIdxVal !== "" ? parseInt(nestedIdxVal, 10) : undefined;
         
@@ -4037,6 +4372,7 @@ async function setupPage() {
     });
 
     setupSpotifyControls();
+    setupHueControls();
     setupWebSockets();
 }
 

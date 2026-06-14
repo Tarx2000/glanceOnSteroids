@@ -367,8 +367,8 @@ func (cm *ConfigManager) AddWidget(pageSlug string, columnIndex string, widgetTy
 		}
 	}
 
-	// Process Calendar credentials
-	if widgetType == "calendar" && properties != nil {
+	// Process Calendar/Gmail credentials
+	if (widgetType == "calendar" || widgetType == "gmail") && properties != nil {
 		var clientID, clientSecret, redirectURL string
 		if cid, ok := properties["google_client_id"].(string); ok {
 			clientID = strings.TrimSpace(cid)
@@ -399,6 +399,42 @@ func (cm *ConfigManager) AddWidget(pageSlug string, columnIndex string, widgetTy
 			}
 			if redirectURL != "" {
 				updateMapValue(googleNode, "redirect-url", redirectURL)
+			}
+		}
+	}
+
+	// Process Hue credentials
+	if widgetType == "hue" && properties != nil {
+		var clientID, clientSecret, redirectURL string
+		if cid, ok := properties["hue_client_id"].(string); ok {
+			clientID = strings.TrimSpace(cid)
+		}
+		if csec, ok := properties["hue_client_secret"].(string); ok {
+			clientSecret = strings.TrimSpace(csec)
+		}
+		if rurl, ok := properties["hue_redirect_url"].(string); ok {
+			redirectURL = strings.TrimSpace(rurl)
+		}
+
+		delete(properties, "hue_client_id")
+		delete(properties, "hue_client_secret")
+		delete(properties, "hue_redirect_url")
+
+		if clientID != "" || (clientSecret != "" && clientSecret != "********") || redirectURL != "" {
+			hueNode := findMapValue(rootMap, "hue")
+			if hueNode == nil || hueNode.Kind != yaml.MappingNode {
+				hueNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+				keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "hue"}
+				rootMap.Content = append(rootMap.Content, keyNode, hueNode)
+			}
+			if clientID != "" {
+				updateMapValue(hueNode, "client-id", clientID)
+			}
+			if clientSecret != "" && clientSecret != "********" {
+				updateMapValue(hueNode, "client-secret", clientSecret)
+			}
+			if redirectURL != "" {
+				updateMapValue(hueNode, "redirect-url", redirectURL)
 			}
 		}
 	}
@@ -623,8 +659,8 @@ func (cm *ConfigManager) UpdateWidget(pageSlug string, columnIndex string, widge
 		}
 	}
 
-	// Process Calendar credentials
-	if widgetType == "calendar" && properties != nil {
+	// Process Calendar/Gmail credentials
+	if (widgetType == "calendar" || widgetType == "gmail") && properties != nil {
 		var clientID, clientSecret, redirectURL string
 		if cid, ok := properties["google_client_id"].(string); ok {
 			clientID = strings.TrimSpace(cid)
@@ -655,6 +691,42 @@ func (cm *ConfigManager) UpdateWidget(pageSlug string, columnIndex string, widge
 			}
 			if redirectURL != "" {
 				updateMapValue(googleNode, "redirect-url", redirectURL)
+			}
+		}
+	}
+
+	// Process Hue credentials
+	if widgetType == "hue" && properties != nil {
+		var clientID, clientSecret, redirectURL string
+		if cid, ok := properties["hue_client_id"].(string); ok {
+			clientID = strings.TrimSpace(cid)
+		}
+		if csec, ok := properties["hue_client_secret"].(string); ok {
+			clientSecret = strings.TrimSpace(csec)
+		}
+		if rurl, ok := properties["hue_redirect_url"].(string); ok {
+			redirectURL = strings.TrimSpace(rurl)
+		}
+
+		delete(properties, "hue_client_id")
+		delete(properties, "hue_client_secret")
+		delete(properties, "hue_redirect_url")
+
+		if clientID != "" || (clientSecret != "" && clientSecret != "********") || redirectURL != "" {
+			hueNode := findMapValue(rootMap, "hue")
+			if hueNode == nil || hueNode.Kind != yaml.MappingNode {
+				hueNode = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+				keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "hue"}
+				rootMap.Content = append(rootMap.Content, keyNode, hueNode)
+			}
+			if clientID != "" {
+				updateMapValue(hueNode, "client-id", clientID)
+			}
+			if clientSecret != "" && clientSecret != "********" {
+				updateMapValue(hueNode, "client-secret", clientSecret)
+			}
+			if redirectURL != "" {
+				updateMapValue(hueNode, "redirect-url", redirectURL)
 			}
 		}
 	}

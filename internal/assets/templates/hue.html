@@ -1,0 +1,41 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+{{ if not .Authorized }}
+<div class="hue-unauthorized" style="text-align: center; padding: 20px 10px;">
+    <p style="font-size: 0.9em; opacity: 0.8; margin-bottom: 12px;">Philips Hue-Konto nicht verbunden.</p>
+    <a href="/api/hue/login" class="btn btn-primary" style="display: inline-block; padding: 8px 16px; background: var(--color-primary); color: #fff; border-radius: 4px; text-decoration: none; font-weight: bold; font-size: 0.9em;">Mit Hue verbinden</a>
+</div>
+{{ else }}
+<div class="hue-container" style="display: flex; flex-direction: column; gap: 8px;">
+    {{ if not .ResourceStatuses }}
+    <div style="font-size: 0.9em; opacity: 0.5; text-align: center; padding: 20px 0;">Keine Lampen oder Räume ausgewählt</div>
+    {{ else }}
+        {{ range .ResourceStatuses }}
+            {{ if eq .Type "scene" }}
+            <!-- Scene recall card -->
+            <button class="hue-control-scene" data-hue-id="{{ .ID }}" data-hue-type="scene" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--color-widget-content-border); border-radius: 6px; color: inherit; cursor: pointer; text-align: left; font-size: 0.88rem; transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease; outline: none; margin: 0;">
+                <span style="font-size: 1.1em;">🎬</span>
+                <span style="font-weight: 500; flex: 1;">{{ .Name }}</span>
+                <span style="font-size: 0.72rem; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid rgba(255,255,255,0.15); padding: 1px 4px; border-radius: 3px;">Recall</span>
+            </button>
+            {{ else }}
+            <!-- Light/Room toggle card -->
+            <div class="hue-control-row" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: rgba(0, 0, 0, 0.12); border: 1px solid var(--color-widget-content-border); border-radius: 6px; transition: border-color 0.15s ease;">
+                <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+                    <span style="font-size: 1.25em; opacity: 0.9;">{{ if eq .Type "room" }}🏠{{ else }}💡{{ end }}</span>
+                    <div style="display: flex; flex-direction: column; min-width: 0;">
+                        <span style="font-size: 0.9rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--color-text-highlight);">{{ .Name }}</span>
+                        <span style="font-size: 0.7rem; opacity: 0.45; text-transform: uppercase; letter-spacing: 0.5px;">{{ if eq .Type "room" }}Raum{{ else }}Lampe{{ end }}</span>
+                    </div>
+                </div>
+                <button class="hue-toggle-btn {{ if .On }}hue-toggle-on{{ else }}hue-toggle-off{{ end }}" data-hue-id="{{ .ID }}" data-hue-type="{{ .Type }}" data-hue-state="{{ if .On }}true{{ else }}false{{ end }}" style="padding: 6px 14px; border-radius: 6px; border: none; font-size: 0.78rem; font-weight: bold; cursor: pointer; min-width: 60px; text-align: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); outline: none; background: {{ if .On }}var(--color-primary){{ else }}rgba(255,255,255,0.08){{ end }}; color: {{ if .On }}#fff{{ else }}inherit{{ end }}; box-shadow: {{ if .On }}0 0 10px rgba(var(--color-primary-rgb, 0, 122, 255), 0.35){{ else }}none{{ end }};">
+                    {{ if .On }}AN{{ else }}AUS{{ end }}
+                </button>
+            </div>
+            {{ end }}
+        {{ end }}
+    {{ end }}
+</div>
+{{ end }}
+{{ end }}

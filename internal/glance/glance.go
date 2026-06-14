@@ -275,6 +275,15 @@ func (a *Application) Serve() error {
 	mux.HandleFunc("GET /api/google/callback", a.HandleGoogleCallback)
 	mux.HandleFunc("GET /api/google/calendars", a.HandleGoogleCalendarsGet)
 
+	// MVV München routes
+	mux.HandleFunc("GET /api/mvv/search", a.HandleMvvSearch)
+
+	// Philips Hue Remote routes
+	mux.HandleFunc("GET /api/hue/login", a.HandleHueLogin)
+	mux.HandleFunc("GET /api/hue/callback", a.HandleHueCallback)
+	mux.HandleFunc("GET /api/hue/resources", a.HandleHueResourcesGet)
+	mux.HandleFunc("POST /api/hue/control", a.HandleHueControl)
+
 	// Spotify playback actions
 	mux.HandleFunc("POST /api/spotify/play", a.HandleSpotifyPlay)
 	mux.HandleFunc("POST /api/spotify/pause", a.HandleSpotifyPause)

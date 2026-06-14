@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,8 +19,8 @@ type hackerNewsPostResponseJson struct {
 	TimePosted   int64  `json:"time"`
 }
 
-func getHackerNewsPostIds(sort string) ([]int, error) {
-	request, _ := http.NewRequest("GET", fmt.Sprintf("https://hacker-news.firebaseio.com/v0/%sstories.json", sort), nil)
+func getHackerNewsPostIds(ctx context.Context, sort string) ([]int, error) {
+	request, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://hacker-news.firebaseio.com/v0/%sstories.json", sort), nil)
 	response, err := decodeJsonFromRequest[[]int](defaultClient, request)
 
 	if err != nil {
@@ -29,15 +30,15 @@ func getHackerNewsPostIds(sort string) ([]int, error) {
 	return response, nil
 }
 
-func getHackerNewsPostsFromIds(postIds []int, commentsUrlTemplate string) (ForumPosts, error) {
+func getHackerNewsPostsFromIds(ctx context.Context, postIds []int, commentsUrlTemplate string) (ForumPosts, error) {
 	requests := make([]*http.Request, len(postIds))
 
 	for i, id := range postIds {
-		request, _ := http.NewRequest("GET", fmt.Sprintf("https://hacker-news.firebaseio.com/v0/item/%d.json", id), nil)
+		request, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("https://hacker-news.firebaseio.com/v0/item/%d.json", id), nil)
 		requests[i] = request
 	}
 
-	task := decodeJsonFromRequestTask[hackerNewsPostResponseJson](defaultClient)
+	task := decodeJsonFromRequestTask[hackerNewsPostResponseJson](ctx, defaultClient)
 	job := newJob(task, requests).withWorkers(30)
 	results, errs, err := workerPoolDo(job)
 
@@ -83,8 +84,8 @@ func getHackerNewsPostsFromIds(postIds []int, commentsUrlTemplate string) (Forum
 	return posts, nil
 }
 
-func FetchHackerNewsPosts(sort string, limit int, commentsUrlTemplate string) (ForumPosts, error) {
-	postIds, err := getHackerNewsPostIds(sort)
+func FetchHackerNewsPosts(ctx context.Context, sort string, limit int, commentsUrlTemplate string) (ForumPosts, error) {
+	postIds, err := getHackerNewsPostIds(ctx, sort)
 
 	if err != nil {
 		return nil, err
@@ -94,5 +95,5 @@ func FetchHackerNewsPosts(sort string, limit int, commentsUrlTemplate string) (F
 		postIds = postIds[:limit]
 	}
 
-	return getHackerNewsPostsFromIds(postIds, commentsUrlTemplate)
+	return getHackerNewsPostsFromIds(ctx, postIds, commentsUrlTemplate)
 }

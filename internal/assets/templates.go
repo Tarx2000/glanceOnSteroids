@@ -18,6 +18,8 @@ import (
 	"golang.org/x/text/message"
 )
 
+var templateHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 var (
 	PageTemplate                  = compileTemplate("page.html", "document.html", "page-style-overrides.gotmpl")
 	PageContentTemplate           = compileTemplate("content.html")
@@ -45,6 +47,9 @@ var (
 	ClockTemplate                 = compileTemplate("clock.html", "widget-base.html")
 	NeuralWattTemplate            = compileTemplate("neuralwatt.html", "widget-base.html")
 	ServerStatsTemplate           = compileTemplate("serverstats.html", "widget-base.html")
+	MVVTemplate                   = compileTemplate("mvv.html", "widget-base.html")
+	GmailTemplate                 = compileTemplate("gmail.html", "widget-base.html")
+	HueTemplate                   = compileTemplate("hue.html", "widget-base.html")
 )
 
 var globalTemplateFunctions = template.FuncMap{
@@ -396,8 +401,7 @@ func (r *RequestBuilder) GetResponse() (*ResponseWrapper, error) {
 		req.Header.Set(k, v)
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := templateHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

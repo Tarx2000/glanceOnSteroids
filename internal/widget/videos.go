@@ -37,7 +37,7 @@ func (widget *Videos) Initialize() error {
 }
 
 func (widget *Videos) Update(ctx context.Context, services ExternalServiceProvider) {
-	videos, err := feed.FetchYoutubeChannelUploads(widget.Channels, widget.VideoUrlTemplate)
+	videos, err := feed.FetchYoutubeChannelUploads(ctx, widget.Channels, widget.VideoUrlTemplate)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return

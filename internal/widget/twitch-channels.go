@@ -31,7 +31,7 @@ func (widget *TwitchChannels) Initialize() error {
 }
 
 func (widget *TwitchChannels) Update(ctx context.Context, services ExternalServiceProvider) {
-	channels, err := feed.FetchChannelsFromTwitch(widget.ChannelsRequest)
+	channels, err := feed.FetchChannelsFromTwitch(ctx, widget.ChannelsRequest)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return

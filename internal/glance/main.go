@@ -62,6 +62,7 @@ func Main() int {
 		}
 
 		InitGoogle(config.Google.ClientID, config.Google.ClientSecret, config.Google.RedirectURL)
+		InitHue(config.Hue.ClientID, config.Hue.ClientSecret, config.Hue.RedirectURL)
 
 		app, err := NewApplication(config, options.ConfigPath)
 
@@ -103,4 +104,20 @@ func (p *glanceServiceProvider) GoogleAuthorized() bool {
 
 func (p *glanceServiceProvider) FetchGoogleEvents(ctx context.Context, calendarIDs []string, maxDaysAhead int) ([]widget.GoogleCalendarEvent, error) {
 	return fetchGoogleEventsFromAPI(ctx, calendarIDs, maxDaysAhead)
+}
+
+func (p *glanceServiceProvider) FetchGmailUnreadCount(ctx context.Context) (int, []widget.GmailEmail, error) {
+	return fetchGmailUnreadCountFromAPI(ctx)
+}
+
+func (p *glanceServiceProvider) HueAuthorized() bool {
+	if Store == nil {
+		return false
+	}
+	auth, _ := Store.GetSetting("hue_authorized", "false")
+	return auth == "true"
+}
+
+func (p *glanceServiceProvider) FetchHueStatuses(ctx context.Context, rooms, lights, scenes []string) ([]widget.HueResource, error) {
+	return fetchHueStatusesFromAPI(ctx, rooms, lights, scenes)
 }

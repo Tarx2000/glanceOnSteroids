@@ -32,12 +32,16 @@ func (g *Group) Initialize() error {
 func (g *Group) Update(ctx context.Context, services ExternalServiceProvider) {
 	now := time.Now()
 	var wg sync.WaitGroup
+	const maxConcurrentUpdates = 5
+	sem := make(chan struct{}, maxConcurrentUpdates)
 	for i := range g.Widgets {
 		w := g.Widgets[i]
 		if w.RequiresUpdate(&now) {
 			wg.Add(1)
+			sem <- struct{}{}
 			go func(wd Widget) {
 				defer wg.Done()
+				defer func() { <-sem }()
 				wd.Update(ctx, services)
 			}(w)
 		}

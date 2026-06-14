@@ -71,7 +71,7 @@ func (widget *Monitor) Update(ctx context.Context, services ExternalServiceProvi
 	requests := make([]*http.Request, len(widget.Sites))
 
 	for i := range widget.Sites {
-		request, err := http.NewRequest("GET", string(widget.Sites[i].Url), nil)
+		request, err := http.NewRequestWithContext(ctx, "GET", string(widget.Sites[i].Url), nil)
 
 		if err != nil {
 			message := fmt.Errorf("failed to create http request for %s: %s", widget.Sites[i].Url, err)

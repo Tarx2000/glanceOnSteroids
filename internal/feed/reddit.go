@@ -39,7 +39,7 @@ type subredditResponseJson struct {
 	} `json:"data"`
 }
 
-func FetchSubredditPosts(subreddit, sort, topPeriod, search, commentsUrlTemplate, requestUrlTemplate string) (ForumPosts, error) {
+func FetchSubredditPosts(ctx context.Context, subreddit, sort, topPeriod, search, commentsUrlTemplate, requestUrlTemplate string) (ForumPosts, error) {
 	query := url.Values{}
 	var requestUrl string
 
@@ -62,7 +62,7 @@ func FetchSubredditPosts(subreddit, sort, topPeriod, search, commentsUrlTemplate
 		requestUrl = strings.ReplaceAll(requestUrlTemplate, "{REQUEST-URL}", requestUrl)
 	}
 
-	request, err := http.NewRequest("GET", requestUrl, nil)
+	request, err := http.NewRequestWithContext(ctx, "GET", requestUrl, nil)
 
 	if err != nil {
 		return nil, err

@@ -20,9 +20,11 @@ var upgrader = websocket.Upgrader{
 }
 
 type Client struct {
-	conn *websocket.Conn
-	page string
-	mu   sync.Mutex
+	conn      *websocket.Conn
+	page      string
+	send      chan []byte
+	mu        sync.Mutex
+	closeOnce sync.Once
 }
 
 // WriteMessage writes a message to the client connection in a thread-safe manner with a write deadline.
@@ -31,6 +33,34 @@ func (c *Client) WriteMessage(messageType int, data []byte) error {
 	defer c.mu.Unlock()
 	_ = c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return c.conn.WriteMessage(messageType, data)
+}
+
+func (c *Client) safeClose() {
+	c.closeOnce.Do(func() {
+		close(c.send)
+		c.conn.Close()
+	})
+}
+
+func (c *Client) writePump() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case message, ok := <-c.send:
+			if !ok {
+				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			if err := c.WriteMessage(websocket.TextMessage, message); err != nil {
+				return
+			}
+		case <-ticker.C:
+			if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
 }
 
 type Hub struct {
@@ -81,7 +111,7 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				client.conn.Close()
+				client.safeClose()
 			}
 			h.mu.Unlock()
 			log.Println("[WS] Client disconnected")
@@ -111,10 +141,9 @@ func (h *Hub) BroadcastMessage(msgType string, data interface{}) {
 
 	var failed []*Client
 	for _, client := range clients {
-		err := client.WriteMessage(websocket.TextMessage, msgBytes)
-		if err != nil {
-			log.Printf("[WS] Error writing to socket: %v", err)
-			client.conn.Close()
+		select {
+		case client.send <- msgBytes:
+		default:
 			failed = append(failed, client)
 		}
 	}
@@ -122,7 +151,10 @@ func (h *Hub) BroadcastMessage(msgType string, data interface{}) {
 	if len(failed) > 0 {
 		h.mu.Lock()
 		for _, c := range failed {
-			delete(h.clients, c)
+			if _, ok := h.clients[c]; ok {
+				delete(h.clients, c)
+				c.safeClose()
+			}
 		}
 		h.mu.Unlock()
 	}
@@ -135,7 +167,8 @@ func (a *Application) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageSlug := r.URL.Query().Get("page")
-	client := &Client{conn: conn, page: pageSlug}
+	client := &Client{conn: conn, page: pageSlug, send: make(chan []byte, 256)}
+	go client.writePump()
 	a.Hub.register <- client
 
 	// Trigger initial Spotify push via poller
@@ -149,20 +182,6 @@ func (a *Application) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 		return nil
 	})
-
-	// Send periodic pings to keep connection alive and reset client read deadlines
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if err := client.WriteMessage(websocket.PingMessage, nil); err != nil {
-					return
-				}
-			}
-		}
-	}()
 
 	// Read loop to detect disconnects and handle client updates
 	go func() {

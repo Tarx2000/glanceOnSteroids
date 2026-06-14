@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"net/http"
@@ -82,10 +83,10 @@ func parsePlaceName(name string) (string, string) {
 	return parts[0] + ", " + expandCountryAbbreviations(parts[2]), strings.TrimSpace(parts[1])
 }
 
-func FetchPlaceFromName(location string) (*PlaceJson, error) {
+func FetchPlaceFromName(ctx context.Context, location string) (*PlaceJson, error) {
 	location, area := parsePlaceName(location)
 	requestUrl := fmt.Sprintf("https://geocoding-api.open-meteo.com/v1/search?name=%s&count=10&language=en&format=json", url.QueryEscape(location))
-	request, _ := http.NewRequest("GET", requestUrl, nil)
+	request, _ := http.NewRequestWithContext(ctx, "GET", requestUrl, nil)
 	responseJson, err := decodeJsonFromRequest[PlacesResponseJson](defaultClient, request)
 
 	if err != nil {
@@ -131,7 +132,7 @@ func barIndexFromHour(h int) int {
 }
 
 // TODO: bunch of spaget, refactor
-func FetchWeatherForPlace(place *PlaceJson, units string) (*Weather, error) {
+func FetchWeatherForPlace(ctx context.Context, place *PlaceJson, units string) (*Weather, error) {
 	query := url.Values{}
 	var temperatureUnit string
 
@@ -152,7 +153,7 @@ func FetchWeatherForPlace(place *PlaceJson, units string) (*Weather, error) {
 	query.Add("temperature_unit", temperatureUnit)
 
 	requestUrl := "https://api.open-meteo.com/v1/forecast?" + query.Encode()
-	request, _ := http.NewRequest("GET", requestUrl, nil)
+	request, _ := http.NewRequestWithContext(ctx, "GET", requestUrl, nil)
 	responseJson, err := decodeJsonFromRequest[WeatherResponseJson](defaultClient, request)
 
 	if err != nil {

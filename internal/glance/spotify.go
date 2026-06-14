@@ -26,6 +26,7 @@ type SpotifyPoller struct {
 	lastSpotifyError string
 	activeCheck      func() int
 	broadcast        func(msgType string, data interface{})
+	httpClient       *http.Client
 }
 
 func NewSpotifyPoller(config SpotifyConfig, activeCheck func() int, broadcast func(msgType string, data interface{})) *SpotifyPoller {
@@ -49,6 +50,7 @@ func NewSpotifyPoller(config SpotifyConfig, activeCheck func() int, broadcast fu
 		config:      config,
 		activeCheck: activeCheck,
 		broadcast:   broadcast,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -210,8 +212,7 @@ func (sp *SpotifyPoller) getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sp.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -334,8 +335,7 @@ func (sp *SpotifyPoller) getSpotifyAccessToken() (string, error) {
 	req.Header.Set("Authorization", "Basic "+auth)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sp.httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -381,8 +381,7 @@ func (sp *SpotifyPoller) spotifyControlAction(method, path string, body io.Reade
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := sp.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

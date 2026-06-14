@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -58,8 +59,10 @@ type NeuralWattDaily struct {
 	EnergyJoules  float64 `json:"energy_joules"`
 }
 
-func FetchNeuralWattSummary(apiKey string) (NeuralWattSummary, error) {
-	req, err := http.NewRequest("GET", "https://api.neuralwatt.com/v1/usage/summary", nil)
+var neuralwattHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+func FetchNeuralWattSummary(ctx context.Context, apiKey string) (NeuralWattSummary, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.neuralwatt.com/v1/usage/summary", nil)
 	if err != nil {
 		return NeuralWattSummary{}, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -67,17 +70,16 @@ func FetchNeuralWattSummary(apiKey string) (NeuralWattSummary, error) {
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	return decodeJsonFromRequest[NeuralWattSummary](client, req)
+	return decodeJsonFromRequest[NeuralWattSummary](neuralwattHTTPClient, req)
 }
 
-func FetchNeuralWattEnergy(apiKey string, startDate, endDate string) (NeuralWattEnergy, error) {
+func FetchNeuralWattEnergy(ctx context.Context, apiKey string, startDate, endDate string) (NeuralWattEnergy, error) {
 	url := fmt.Sprintf(
 		"https://api.neuralwatt.com/v1/usage/energy?start_date=%s&end_date=%s",
 		startDate, endDate,
 	)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return NeuralWattEnergy{}, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -85,6 +87,5 @@ func FetchNeuralWattEnergy(apiKey string, startDate, endDate string) (NeuralWatt
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	return decodeJsonFromRequest[NeuralWattEnergy](client, req)
+	return decodeJsonFromRequest[NeuralWattEnergy](neuralwattHTTPClient, req)
 }

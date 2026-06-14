@@ -84,6 +84,7 @@ func isValidRedditTopPeriod(period string) bool {
 func (widget *Reddit) Update(ctx context.Context, services ExternalServiceProvider) {
 	// TODO: refactor, use a struct to pass all of these
 	posts, err := feed.FetchSubredditPosts(
+		ctx,
 		widget.Subreddit,
 		widget.SortBy,
 		widget.TopPeriod,

@@ -39,6 +39,7 @@ func (widget *Repository) Initialize() error {
 
 func (widget *Repository) Update(ctx context.Context, services ExternalServiceProvider) {
 	details, err := feed.FetchRepositoryDetailsFromGithub(
+		ctx,
 		widget.RequestedRepository,
 		string(widget.Token),
 		widget.PullRequestsLimit,

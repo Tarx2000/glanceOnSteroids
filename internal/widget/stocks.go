@@ -34,7 +34,7 @@ func (widget *Stocks) Initialize() error {
 }
 
 func (widget *Stocks) Update(ctx context.Context, services ExternalServiceProvider) {
-	stocks, err := feed.FetchStocksDataFromYahoo(widget.Stocks)
+	stocks, err := feed.FetchStocksDataFromYahoo(ctx, widget.Stocks)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {
 		return

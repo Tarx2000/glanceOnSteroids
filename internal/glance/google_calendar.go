@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	googleConfig  GoogleConfig
-	googleStateMu sync.Mutex
+	googleConfig   GoogleConfig
+	googleStateMu  sync.Mutex
+	googleHTTPClient = &http.Client{Timeout: 10 * time.Second}
 )
 
 // InitGoogle configures Google client credentials and redirect URI.
@@ -92,7 +93,7 @@ func getGoogleAccessToken() (string, error) {
 	data.Set("client_id", googleConfig.ClientID)
 	data.Set("client_secret", googleConfig.ClientSecret)
 
-	resp, err := http.PostForm("https://oauth2.googleapis.com/token", data)
+	resp, err := googleHTTPClient.PostForm("https://oauth2.googleapis.com/token", data)
 	if err != nil {
 		return "", err
 	}
@@ -149,11 +150,10 @@ func fetchGoogleEventsFromAPI(ctx context.Context, calendarIDs []string, maxDays
 
 	// 1. Fetch Calendar List to build color mapping
 	colorMap := make(map[string]string)
-	listReq, err := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/calendar/v3/users/me/calendarList", nil)
-	if err == nil {
-		listReq.Header.Set("Authorization", "Bearer "+token)
-		client := &http.Client{Timeout: 5 * time.Second}
-		if listResp, err := client.Do(listReq); err == nil {
+		listReq, err := http.NewRequestWithContext(ctx, "GET", "https://www.googleapis.com/calendar/v3/users/me/calendarList", nil)
+		if err == nil {
+			listReq.Header.Set("Authorization", "Bearer "+token)
+			if listResp, err := googleHTTPClient.Do(listReq); err == nil {
 			defer listResp.Body.Close()
 			if listResp.StatusCode == http.StatusOK {
 				var listData struct {
@@ -194,8 +194,7 @@ func fetchGoogleEventsFromAPI(ctx context.Context, calendarIDs []string, maxDays
 			}
 			req.Header.Set("Authorization", "Bearer "+token)
 
-			client := &http.Client{Timeout: 8 * time.Second}
-			resp, err := client.Do(req)
+			resp, err := googleHTTPClient.Do(req)
 			if err != nil {
 				return
 			}

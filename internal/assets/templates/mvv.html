@@ -1,0 +1,33 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+<div class="mvv-station-title" style="font-size: 0.82rem; opacity: 0.7; margin-bottom: 10px; font-weight: 500; letter-spacing: 0.3px;">
+    📍 {{ .StationName }}
+</div>
+<div class="mvv-departures-list" style="display: flex; flex-direction: column; gap: 8px;">
+    {{ if not .Departures }}
+    <div style="font-size: 0.9em; opacity: 0.5; text-align: center; padding: 20px 0;">Keine aktuellen Abfahrten</div>
+    {{ else }}
+        {{ range .Departures }}
+        <div class="mvv-departure-item" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; background: rgba(0, 0, 0, 0.12); border-radius: 6px; border: 1px solid var(--color-widget-content-border); transition: transform 0.15s ease;">
+            <div style="display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1;">
+                <span class="mvv-badge mvv-badge-{{ .Type }}">{{ .Line }}</span>
+                <span class="mvv-destination" style="font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.95; font-weight: 500;">{{ .Destination }}</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; flex-shrink: 0;">
+                {{ if .HasDelay }}
+                    {{ if gt .DelayMin 0 }}
+                    <span class="mvv-delay mvv-delay-late" style="color: var(--color-negative); font-size: 0.8rem; font-weight: bold; padding: 2px 5px; background: rgba(255, 69, 58, 0.08); border-radius: 4px;">+{{ .DelayMin }}m</span>
+                    {{ else if lt .DelayMin 0 }}
+                    <span class="mvv-delay mvv-delay-early" style="color: var(--color-positive); font-size: 0.8rem; font-weight: bold; padding: 2px 5px; background: rgba(48, 209, 88, 0.08); border-radius: 4px;">{{ .DelayMin }}m</span>
+                    {{ else }}
+                    <span class="mvv-delay mvv-delay-ontime" style="color: var(--color-positive); font-size: 0.78rem; opacity: 0.9; padding: 2px 5px; background: rgba(48, 209, 88, 0.08); border-radius: 4px;">pünktl.</span>
+                    {{ end }}
+                {{ end }}
+                <span class="mvv-time" style="font-family: monospace; font-size: 0.95rem; font-weight: bold; color: var(--color-text-highlight);">{{ .Time }}</span>
+            </div>
+        </div>
+        {{ end }}
+    {{ end }}
+</div>
+{{ end }}
