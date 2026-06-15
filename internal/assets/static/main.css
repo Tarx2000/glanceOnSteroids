@@ -2544,9 +2544,30 @@ body.is-dragging .mobile-navigation {
 }
 
 /* Philips Hue Remote Widget Styles */
+.hue-control-scene {
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
 .hue-control-scene:hover {
     background-color: rgba(255, 255, 255, 0.08) !important;
     border-color: var(--color-primary) !important;
+    transform: translateY(-2px);
+}
+.hue-control-scene:active {
+    transform: scale(0.96) translateY(0);
+}
+.hue-control-scene.hue-scene-active {
+    background-color: var(--color-primary) !important;
+    border-color: var(--color-primary) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 12px rgba(var(--color-primary-rgb, 255, 208, 0), 0.35) !important;
+}
+.hue-control-scene.hue-scene-active:hover {
+    background-color: var(--color-primary) !important;
+    opacity: 0.95;
+    transform: translateY(-2px) scale(1.02);
+}
+.hue-control-row {
+    transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 .hue-control-row:hover {
     border-color: var(--color-primary) !important;

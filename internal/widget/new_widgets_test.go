@@ -56,6 +56,20 @@ func TestMvvWidget(t *testing.T) {
 				"label":                 "S1",
 				"destination":           "Feldmoching",
 			},
+			{
+				"plannedDepartureTime":  int64(1781479560000),
+				"realtimeDepartureTime": int64(1781479560000),
+				"transportType":         "SBAHN",
+				"label":                 "S8",
+				"destination":           "Flughafen München",
+			},
+			{
+				"plannedDepartureTime":  int64(1781479620000),
+				"realtimeDepartureTime": int64(1781479620000),
+				"transportType":         "REGIONALBUS",
+				"label":                 "X30",
+				"destination":           "Harras",
+			},
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(mockResponse)
@@ -77,12 +91,14 @@ func TestMvvWidget(t *testing.T) {
 		t.Error("expected error for empty StationID, got nil")
 	}
 
-	// Test Case 2: Successful fetch and filtering
+	// Test Case 2: Successful fetch and filtering (all transport types enabled by default)
 	mvvWidget = &Mvv{
 		StationID: "de:09162:6", // Munich Marienplatz ID
-		Limit: 2,
+		Limit:     4,
 		ShowUBahn: true,
 		ShowSBahn: true,
+		ShowBus:   true,
+		ShowTram:  true,
 	}
 	_ = mvvWidget.Initialize()
 	mvvWidget.Update(context.Background(), nil)
@@ -91,18 +107,65 @@ func TestMvvWidget(t *testing.T) {
 		t.Errorf("expected no error, got: %v", mvvWidget.Error)
 	}
 
-	if len(mvvWidget.Departures) != 2 {
-		t.Errorf("expected 2 departures, got %d", len(mvvWidget.Departures))
+	if len(mvvWidget.Departures) != 4 {
+		t.Errorf("expected 4 departures, got %d", len(mvvWidget.Departures))
 	}
 
 	dep1 := mvvWidget.Departures[0]
-	if dep1.Line != "U3" || dep1.Destination != "Marienplatz" || dep1.DelayMin != 2 || !dep1.HasDelay {
+	if dep1.Line != "U3" || dep1.Destination != "Marienplatz" || dep1.DelayMin != 2 || !dep1.HasDelay || dep1.Type != "ubahn" {
 		t.Errorf("first departure parsed incorrectly: %+v", dep1)
 	}
 
-	dep2 := mvvWidget.Departures[1]
-	if dep2.Line != "S1" || dep2.Destination != "Feldmoching" || dep2.DelayMin != 0 || dep2.HasDelay {
-		t.Errorf("second departure parsed incorrectly: %+v", dep2)
+	dep3 := mvvWidget.Departures[2]
+	if dep3.Line != "S8" || dep3.Destination != "Flughafen München" || dep3.Type != "sbahn" {
+		t.Errorf("third departure (SBAHN type) parsed incorrectly: %+v", dep3)
+	}
+
+	dep4 := mvvWidget.Departures[3]
+	if dep4.Line != "X30" || dep4.Destination != "Harras" || dep4.Type != "bus" {
+		t.Errorf("fourth departure (REGIONALBUS type) parsed incorrectly: %+v", dep4)
+	}
+
+	// Test Case 3: Filter by Directions (inclusion)
+	mvvWidget = &Mvv{
+		StationID:  "de:09162:6",
+		Limit:      4,
+		ShowUBahn:  true,
+		ShowSBahn:  true,
+		ShowBus:    true,
+		ShowTram:   true,
+		Directions: "Flughafen, Feldmoching",
+	}
+	_ = mvvWidget.Initialize()
+	mvvWidget.Update(context.Background(), nil)
+
+	if len(mvvWidget.Departures) != 2 {
+		t.Errorf("expected 2 departures after directions inclusion filter, got %d", len(mvvWidget.Departures))
+	}
+	if mvvWidget.Departures[0].Destination != "Feldmoching" || mvvWidget.Departures[1].Destination != "Flughafen München" {
+		t.Errorf("unexpected filtered departures: %+v", mvvWidget.Departures)
+	}
+
+	// Test Case 4: Filter by ExcludeDirections
+	mvvWidget = &Mvv{
+		StationID:         "de:09162:6",
+		Limit:             4,
+		ShowUBahn:         true,
+		ShowSBahn:         true,
+		ShowBus:           true,
+		ShowTram:          true,
+		ExcludeDirections: "Feldmoching",
+	}
+	_ = mvvWidget.Initialize()
+	mvvWidget.Update(context.Background(), nil)
+
+	if len(mvvWidget.Departures) != 3 {
+		t.Errorf("expected 3 departures after exclusion filter, got %d", len(mvvWidget.Departures))
+	}
+	for _, dep := range mvvWidget.Departures {
+		if dep.Destination == "Feldmoching" {
+			t.Error("found excluded destination 'Feldmoching' in departures")
+		}
 	}
 }
 

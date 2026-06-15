@@ -27,10 +27,11 @@ type GmailEmail struct {
 }
 
 type HueResource struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"` // room, light, scene
-	On   bool   `json:"on"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"` // room, light, scene
+	On      bool   `json:"on"`
+	GroupID string `json:"group_id,omitempty"` // ID of the parent room/zone for scenes
 }
 
 // ExternalServiceProvider defines the interface for third-party integrations

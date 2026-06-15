@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/glanceapp/glance/internal/assets"
@@ -26,19 +27,28 @@ type MvvDeparture struct {
 }
 
 type Mvv struct {
-	widgetBase  `yaml:",inline"`
-	StationID   string         `yaml:"station-id"`
-	StationName string         `yaml:"station-name"`
-	Limit       int            `yaml:"limit"`
-	ShowSBahn   BoolField      `yaml:"show-sbahn"`
-	ShowUBahn   BoolField      `yaml:"show-ubahn"`
-	ShowBus     BoolField      `yaml:"show-bus"`
-	ShowTram    BoolField      `yaml:"show-tram"`
-	Departures  []MvvDeparture `yaml:"-"`
+	widgetBase        `yaml:",inline"`
+	StationID         string         `yaml:"station-id"`
+	StationName       string         `yaml:"station-name"`
+	Limit             int            `yaml:"limit"`
+	ShowSBahn         BoolField      `yaml:"show-sbahn"`
+	ShowUBahn         BoolField      `yaml:"show-ubahn"`
+	ShowBus           BoolField      `yaml:"show-bus"`
+	ShowTram          BoolField      `yaml:"show-tram"`
+	Directions        string         `yaml:"directions"`
+	ExcludeDirections string         `yaml:"exclude-directions"`
+	Departures        []MvvDeparture `yaml:"-"`
 }
 
 func init() {
-	Register("mvv", func() Widget { return &Mvv{} })
+	Register("mvv", func() Widget {
+		return &Mvv{
+			ShowSBahn: true,
+			ShowUBahn: true,
+			ShowBus:   true,
+			ShowTram:  true,
+		}
+	})
 }
 
 func (widget *Mvv) Initialize() error {
@@ -98,7 +108,7 @@ func (widget *Mvv) Update(ctx context.Context, services ExternalServiceProvider)
 		// Determine transport type
 		var t string
 		switch rd.TransportType {
-		case "SUBURBAN":
+		case "SUBURBAN", "SBAHN":
 			t = "sbahn"
 			if !widget.ShowSBahn {
 				continue
@@ -108,7 +118,7 @@ func (widget *Mvv) Update(ctx context.Context, services ExternalServiceProvider)
 			if !widget.ShowUBahn {
 				continue
 			}
-		case "BUS":
+		case "BUS", "REGIONALBUS":
 			t = "bus"
 			if !widget.ShowBus {
 				continue
@@ -121,6 +131,39 @@ func (widget *Mvv) Update(ctx context.Context, services ExternalServiceProvider)
 		default:
 			t = "bus"
 			if !widget.ShowBus {
+				continue
+			}
+		}
+
+		// Filter by directions (include/exclude)
+		if widget.Directions != "" {
+			include := false
+			target := strings.ToLower(rd.Destination)
+			parts := strings.Split(widget.Directions, ",")
+			for _, p := range parts {
+				p = strings.TrimSpace(strings.ToLower(p))
+				if p != "" && strings.Contains(target, p) {
+					include = true
+					break
+				}
+			}
+			if !include {
+				continue
+			}
+		}
+
+		if widget.ExcludeDirections != "" {
+			exclude := false
+			target := strings.ToLower(rd.Destination)
+			parts := strings.Split(widget.ExcludeDirections, ",")
+			for _, p := range parts {
+				p = strings.TrimSpace(strings.ToLower(p))
+				if p != "" && strings.Contains(target, p) {
+					exclude = true
+					break
+				}
+			}
+			if exclude {
 				continue
 			}
 		}

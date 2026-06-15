@@ -1933,12 +1933,18 @@ const widgetFieldTemplates = {
         <input type="number" name="limit" value="4" min="1" max="20" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
         
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Verkehrsmittel filter</label>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
             <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-sbahn" checked /> S-Bahn</label>
             <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-ubahn" checked /> U-Bahn</label>
             <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-bus" checked /> Bus</label>
             <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-tram" checked /> Tram</label>
         </div>
+
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Richtungen filtern (kommagetrennt, z.B. Ostbahnhof)</label>
+        <input type="text" name="directions" placeholder="Nur diese Richtungen anzeigen..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Richtungen ausschließen (kommagetrennt, z.B. Geltendorf)</label>
+        <input type="text" name="exclude-directions" placeholder="Diese Richtungen ausblenden..." style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
     gmail: `
         <p style="font-size: 0.85em; opacity: 0.7; margin-bottom: 12px;">Nutzt die globalen Google OAuth-Zugangsdaten. Falls noch nicht geschehen, trage diese in den globalen Einstellungen ein.</p>
@@ -3692,6 +3698,7 @@ function setupHueControls() {
             const currentState = toggleBtn.getAttribute("data-hue-state") === "true";
             const newState = !currentState;
 
+            // Update button styles and state
             toggleBtn.setAttribute("data-hue-state", newState ? "true" : "false");
             toggleBtn.textContent = newState ? "AN" : "AUS";
             toggleBtn.style.background = newState ? "var(--color-primary)" : "rgba(255,255,255,0.08)";
@@ -3700,6 +3707,36 @@ function setupHueControls() {
                 toggleBtn.style.boxShadow = "0 0 10px rgba(var(--color-primary-rgb, 0, 122, 255), 0.35)";
             } else {
                 toggleBtn.style.boxShadow = "none";
+            }
+
+            // Update circular status dot
+            const row = toggleBtn.closest(".hue-control-row");
+            const indicator = row ? row.querySelector(".hue-status-indicator") : null;
+            if (indicator) {
+                if (newState) {
+                    indicator.style.background = "var(--color-primary)";
+                    indicator.style.boxShadow = "0 0 8px var(--color-primary)";
+                } else {
+                    indicator.style.background = "rgba(255,255,255,0.25)";
+                    indicator.style.boxShadow = "none";
+                }
+            }
+
+            // If room is turned off, also deactivate all scene buttons under it
+            let deactivatedScenes = [];
+            if (rtype === "room" && !newState) {
+                const scenes = document.querySelectorAll(`.hue-control-scene[data-hue-group="${id}"]`);
+                scenes.forEach(btn => {
+                    if (btn.getAttribute("data-hue-state") === "true") {
+                        btn.setAttribute("data-hue-state", "false");
+                        btn.classList.remove("hue-scene-active");
+                        btn.style.background = "";
+                        btn.style.borderColor = "";
+                        btn.style.color = "";
+                        btn.style.boxShadow = "";
+                        deactivatedScenes.push(btn);
+                    }
+                });
             }
 
             try {
@@ -3714,6 +3751,7 @@ function setupHueControls() {
             } catch (err) {
                 console.error(err);
                 showToast("Steuerung fehlgeschlagen", "error");
+                // Rollback button state
                 toggleBtn.setAttribute("data-hue-state", currentState ? "true" : "false");
                 toggleBtn.textContent = currentState ? "AN" : "AUS";
                 toggleBtn.style.background = currentState ? "var(--color-primary)" : "rgba(255,255,255,0.08)";
@@ -3723,6 +3761,25 @@ function setupHueControls() {
                 } else {
                     toggleBtn.style.boxShadow = "none";
                 }
+                // Rollback status indicator
+                if (indicator) {
+                    if (currentState) {
+                        indicator.style.background = "var(--color-primary)";
+                        indicator.style.boxShadow = "0 0 8px var(--color-primary)";
+                    } else {
+                        indicator.style.background = "rgba(255,255,255,0.25)";
+                        indicator.style.boxShadow = "none";
+                    }
+                }
+                // Rollback deactivated scenes
+                deactivatedScenes.forEach(btn => {
+                    btn.setAttribute("data-hue-state", "true");
+                    btn.classList.add("hue-scene-active");
+                    btn.style.background = "var(--color-primary)";
+                    btn.style.borderColor = "var(--color-primary)";
+                    btn.style.color = "#fff";
+                    btn.style.boxShadow = "0 4px 12px rgba(var(--color-primary-rgb, 255, 208, 0), 0.35)";
+                });
             }
             return;
         }
@@ -3730,25 +3787,162 @@ function setupHueControls() {
         if (sceneBtn) {
             const id = sceneBtn.getAttribute("data-hue-id");
             const rtype = sceneBtn.getAttribute("data-hue-type");
+            const currentState = sceneBtn.getAttribute("data-hue-state") === "true";
+            const newState = !currentState;
 
-            sceneBtn.style.transform = "scale(0.97)";
+            sceneBtn.style.transform = "scale(0.96)";
             setTimeout(() => {
                 sceneBtn.style.transform = "";
             }, 100);
+
+            // Optimistic update for scene button styles
+            sceneBtn.setAttribute("data-hue-state", newState ? "true" : "false");
+            if (newState) {
+                sceneBtn.classList.add("hue-scene-active");
+                sceneBtn.style.background = "var(--color-primary)";
+                sceneBtn.style.borderColor = "var(--color-primary)";
+                sceneBtn.style.color = "#fff";
+                sceneBtn.style.boxShadow = "0 4px 12px rgba(var(--color-primary-rgb, 255, 208, 0), 0.35)";
+            } else {
+                sceneBtn.classList.remove("hue-scene-active");
+                sceneBtn.style.background = "rgba(255, 255, 255, 0.03)";
+                sceneBtn.style.borderColor = "var(--color-widget-content-border)";
+                sceneBtn.style.color = "inherit";
+                sceneBtn.style.boxShadow = "none";
+            }
+
+            // Coordinate with other scenes in the same group and the parent group button
+            const group = sceneBtn.getAttribute("data-hue-group");
+            let deactivatedScenes = [];
+            let oldRoomState = null;
+
+            if (group) {
+                if (newState) {
+                    // Turn OFF any other active scene in the same room
+                    const otherScenes = document.querySelectorAll(`.hue-control-scene[data-hue-group="${group}"]`);
+                    otherScenes.forEach(btn => {
+                        if (btn !== sceneBtn && btn.getAttribute("data-hue-state") === "true") {
+                            btn.setAttribute("data-hue-state", "false");
+                            btn.classList.remove("hue-scene-active");
+                            btn.style.background = "";
+                            btn.style.borderColor = "";
+                            btn.style.color = "";
+                            btn.style.boxShadow = "";
+                            deactivatedScenes.push(btn);
+                        }
+                    });
+
+                    // Set the parent room toggle button to active (since a scene is on, the room is on)
+                    const roomToggle = document.querySelector(`.hue-toggle-btn[data-hue-id="${group}"][data-hue-type="room"]`);
+                    if (roomToggle && roomToggle.getAttribute("data-hue-state") !== "true") {
+                        oldRoomState = {
+                            state: roomToggle.getAttribute("data-hue-state"),
+                            text: roomToggle.textContent,
+                            bg: roomToggle.style.background,
+                            color: roomToggle.style.color,
+                            shadow: roomToggle.style.boxShadow
+                        };
+                        roomToggle.setAttribute("data-hue-state", "true");
+                        roomToggle.textContent = "AN";
+                        roomToggle.style.background = "var(--color-primary)";
+                        roomToggle.style.color = "#fff";
+                        roomToggle.style.boxShadow = "0 0 10px rgba(var(--color-primary-rgb, 0, 122, 255), 0.35)";
+
+                        const roomRow = roomToggle.closest(".hue-control-row");
+                        const roomIndicator = roomRow ? roomRow.querySelector(".hue-status-indicator") : null;
+                        if (roomIndicator) {
+                            oldRoomState.indicatorBg = roomIndicator.style.background;
+                            oldRoomState.indicatorShadow = roomIndicator.style.boxShadow;
+                            roomIndicator.style.background = "var(--color-primary)";
+                            roomIndicator.style.boxShadow = "0 0 8px var(--color-primary)";
+                        }
+                    }
+                } else {
+                    // Toggling active scene off: turn OFF parent room toggle button
+                    const roomToggle = document.querySelector(`.hue-toggle-btn[data-hue-id="${group}"][data-hue-type="room"]`);
+                    if (roomToggle && roomToggle.getAttribute("data-hue-state") !== "false") {
+                        oldRoomState = {
+                            state: roomToggle.getAttribute("data-hue-state"),
+                            text: roomToggle.textContent,
+                            bg: roomToggle.style.background,
+                            color: roomToggle.style.color,
+                            shadow: roomToggle.style.boxShadow
+                        };
+                        roomToggle.setAttribute("data-hue-state", "false");
+                        roomToggle.textContent = "AUS";
+                        roomToggle.style.background = "rgba(255,255,255,0.08)";
+                        roomToggle.style.color = "inherit";
+                        roomToggle.style.boxShadow = "none";
+
+                        const roomRow = roomToggle.closest(".hue-control-row");
+                        const roomIndicator = roomRow ? roomRow.querySelector(".hue-status-indicator") : null;
+                        if (roomIndicator) {
+                            oldRoomState.indicatorBg = roomIndicator.style.background;
+                            oldRoomState.indicatorShadow = roomIndicator.style.boxShadow;
+                            roomIndicator.style.background = "rgba(255,255,255,0.25)";
+                            roomIndicator.style.boxShadow = "none";
+                        }
+                    }
+                }
+            }
 
             try {
                 const res = await fetch("/api/hue/control", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ id: id, type: rtype, on: true })
+                    body: JSON.stringify({ id: id, type: rtype, on: newState })
                 });
                 if (!res.ok) {
-                    throw new Error("Scene activation failed");
+                    throw new Error("Scene control failed");
                 }
-                showToast("Szene aktiviert", "success");
+                showToast(newState ? "Szene aktiviert" : "Szene deaktiviert", "success");
             } catch (err) {
                 console.error(err);
-                showToast("Aktivierung fehlgeschlagen", "error");
+                showToast("Steuerung fehlgeschlagen", "error");
+                // Rollback scene button
+                sceneBtn.setAttribute("data-hue-state", currentState ? "true" : "false");
+                if (currentState) {
+                    sceneBtn.classList.add("hue-scene-active");
+                    sceneBtn.style.background = "var(--color-primary)";
+                    sceneBtn.style.borderColor = "var(--color-primary)";
+                    sceneBtn.style.color = "#fff";
+                    sceneBtn.style.boxShadow = "0 4px 12px rgba(var(--color-primary-rgb, 255, 208, 0), 0.35)";
+                } else {
+                    sceneBtn.classList.remove("hue-scene-active");
+                    sceneBtn.style.background = "rgba(255, 255, 255, 0.03)";
+                    sceneBtn.style.borderColor = "var(--color-widget-content-border)";
+                    sceneBtn.style.color = "inherit";
+                    sceneBtn.style.boxShadow = "none";
+                }
+
+                // Rollback other scene buttons
+                deactivatedScenes.forEach(btn => {
+                    btn.setAttribute("data-hue-state", "true");
+                    btn.classList.add("hue-scene-active");
+                    btn.style.background = "var(--color-primary)";
+                    btn.style.borderColor = "var(--color-primary)";
+                    btn.style.color = "#fff";
+                    btn.style.boxShadow = "0 4px 12px rgba(var(--color-primary-rgb, 255, 208, 0), 0.35)";
+                });
+
+                // Rollback room toggle button
+                if (oldRoomState) {
+                    const roomToggle = document.querySelector(`.hue-toggle-btn[data-hue-id="${group}"][data-hue-type="room"]`);
+                    if (roomToggle) {
+                        roomToggle.setAttribute("data-hue-state", oldRoomState.state);
+                        roomToggle.textContent = oldRoomState.text;
+                        roomToggle.style.background = oldRoomState.bg;
+                        roomToggle.style.color = oldRoomState.color;
+                        roomToggle.style.boxShadow = oldRoomState.shadow;
+
+                        const roomRow = roomToggle.closest(".hue-control-row");
+                        const roomIndicator = roomRow ? roomRow.querySelector(".hue-status-indicator") : null;
+                        if (roomIndicator) {
+                            roomIndicator.style.background = oldRoomState.indicatorBg;
+                            roomIndicator.style.boxShadow = oldRoomState.indicatorShadow;
+                        }
+                    }
+                }
             }
         }
     });

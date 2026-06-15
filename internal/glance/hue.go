@@ -22,6 +22,11 @@ var (
 	hueConfig     HueConfig
 	hueStateMu    sync.Mutex
 	hueHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+	// lastActiveSceneMu protects access to the lastActiveScene map.
+	lastActiveSceneMu sync.RWMutex
+	// lastActiveScene tracks the ID of the last activated scene per room/zone ID.
+	lastActiveScene = make(map[string]string)
 )
 
 // InitHue configures Philips Hue client credentials and redirect URI.
@@ -374,8 +379,9 @@ func fetchHueStatusesFromAPI(ctx context.Context, rooms, lights, scenes []string
 		}
 	}
 
-	// Fetch all scenes to get their names
+	// Fetch all scenes to get their names and group associations
 	sceneNameMap := make(map[string]string)
+	sceneGroupMap := make(map[string]string)
 	req, err = http.NewRequestWithContext(ctx, "GET", "https://api.meethue.com/route/clip/v2/resource/scene", nil)
 	if err == nil {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -388,11 +394,16 @@ func fetchHueStatusesFromAPI(ctx context.Context, rooms, lights, scenes []string
 					Metadata struct {
 						Name string `json:"name"`
 					} `json:"metadata"`
+					Group struct {
+						Rid   string `json:"rid"`
+						Rtype string `json:"rtype"`
+					} `json:"group"`
 				} `json:"data"`
 			}
 			if json.NewDecoder(resp.Body).Decode(&resData) == nil {
 				for _, sc := range resData.Data {
 					sceneNameMap[sc.ID] = sc.Metadata.Name
+					sceneGroupMap[sc.ID] = sc.Group.Rid
 				}
 			}
 		}
@@ -437,11 +448,29 @@ func fetchHueStatusesFromAPI(ctx context.Context, rooms, lights, scenes []string
 		if name == "" {
 			name = "Unbekannte Szene"
 		}
+
+		groupRid := sceneGroupMap[sceneID]
+
+		// Determine if the scene's associated room/zone is turned on
+		roomIsOn := false
+		if groupRid != "" {
+			glID := roomGroupedLightMap[groupRid]
+			roomIsOn = groupedLightStateMap[glID]
+		}
+
+		// A scene is active if its group is on and it is the last active scene for that group
+		lastActiveSceneMu.RLock()
+		activeSceneID := lastActiveScene[groupRid]
+		lastActiveSceneMu.RUnlock()
+
+		isOn := roomIsOn && (activeSceneID == sceneID)
+
 		results = append(results, widget.HueResource{
-			ID:   sceneID,
-			Name: name,
-			Type: "scene",
-			On:   false,
+			ID:      sceneID,
+			Name:    name,
+			Type:    "scene",
+			On:      isOn,
+			GroupID: groupRid,
 		})
 	}
 
@@ -468,10 +497,10 @@ func controlHueResource(ctx context.Context, id, rtype string, state bool) error
 		body, _ = json.Marshal(map[string]interface{}{
 			"on": map[string]bool{"on": state},
 		})
-	case "room":
-		// Resolve room grouped_light ID first
-		roomGLID := ""
-		req, err := http.NewRequestWithContext(ctx, "GET", "https://api.meethue.com/route/clip/v2/resource/room/"+id, nil)
+	case "room", "zone":
+		// Resolve room/zone grouped_light ID first
+		groupGLID := ""
+		req, err := http.NewRequestWithContext(ctx, "GET", "https://api.meethue.com/route/clip/v2/resource/"+rtype+"/"+id, nil)
 		if err != nil {
 			return err
 		}
@@ -490,27 +519,99 @@ func controlHueResource(ctx context.Context, id, rtype string, state bool) error
 			if json.NewDecoder(resp.Body).Decode(&resData) == nil && len(resData.Data) > 0 {
 				for _, s := range resData.Data[0].Services {
 					if s.Rtype == "grouped_light" {
-						roomGLID = s.Rid
+						groupGLID = s.Rid
 						break
 					}
 				}
 			}
 		}
 
-		if roomGLID == "" {
-			return fmt.Errorf("could not find grouped_light for room %s", id)
+		if groupGLID == "" {
+			return fmt.Errorf("could not find grouped_light for %s %s", rtype, id)
 		}
 
-		apiURL = fmt.Sprintf("https://api.meethue.com/route/clip/v2/resource/grouped_light/%s", roomGLID)
+		apiURL = fmt.Sprintf("https://api.meethue.com/route/clip/v2/resource/grouped_light/%s", groupGLID)
 		body, _ = json.Marshal(map[string]interface{}{
 			"on": map[string]bool{"on": state},
 		})
 
+		// If turning off the room/zone, clear the last active scene for it
+		if !state {
+			lastActiveSceneMu.Lock()
+			lastActiveScene[id] = ""
+			lastActiveSceneMu.Unlock()
+		}
+
 	case "scene":
-		apiURL = fmt.Sprintf("https://api.meethue.com/route/clip/v2/resource/scene/%s", id)
-		body, _ = json.Marshal(map[string]interface{}{
-			"recall": map[string]string{"action": "active"},
-		})
+		if state {
+			apiURL = fmt.Sprintf("https://api.meethue.com/route/clip/v2/resource/scene/%s", id)
+			body, _ = json.Marshal(map[string]interface{}{
+				"recall": map[string]string{"action": "active"},
+			})
+
+			// Resolve scene's group (room/zone) ID so we can track the active scene
+			var groupRid string
+			req, err := http.NewRequestWithContext(ctx, "GET", "https://api.meethue.com/route/clip/v2/resource/scene/"+id, nil)
+			if err == nil {
+				req.Header.Set("Authorization", "Bearer "+token)
+				req.Header.Set("hue-application-key", username)
+				if resp, err := hueHTTPClient.Do(req); err == nil {
+					defer resp.Body.Close()
+					var resData struct {
+						Data []struct {
+							Group struct {
+								Rid   string `json:"rid"`
+								Rtype string `json:"rtype"`
+							} `json:"group"`
+						} `json:"data"`
+					}
+					if json.NewDecoder(resp.Body).Decode(&resData) == nil && len(resData.Data) > 0 {
+						groupRid = resData.Data[0].Group.Rid
+					}
+				}
+			}
+			if groupRid != "" {
+				lastActiveSceneMu.Lock()
+				lastActiveScene[groupRid] = id
+				lastActiveSceneMu.Unlock()
+			}
+		} else {
+			// Turning OFF a scene: resolve the scene's group (room/zone) ID first
+			var groupRid string
+			var groupRtype string
+			req, err := http.NewRequestWithContext(ctx, "GET", "https://api.meethue.com/route/clip/v2/resource/scene/"+id, nil)
+			if err == nil {
+				req.Header.Set("Authorization", "Bearer "+token)
+				req.Header.Set("hue-application-key", username)
+				if resp, err := hueHTTPClient.Do(req); err == nil {
+					defer resp.Body.Close()
+					var resData struct {
+						Data []struct {
+							Group struct {
+								Rid   string `json:"rid"`
+								Rtype string `json:"rtype"`
+							} `json:"group"`
+						} `json:"data"`
+					}
+					if json.NewDecoder(resp.Body).Decode(&resData) == nil && len(resData.Data) > 0 {
+						groupRid = resData.Data[0].Group.Rid
+						groupRtype = resData.Data[0].Group.Rtype
+					}
+				}
+			}
+			if groupRid != "" && groupRtype != "" {
+				// Turn off the group (room/zone) recursively
+				err := controlHueResource(ctx, groupRid, groupRtype, false)
+				if err != nil {
+					return err
+				}
+				lastActiveSceneMu.Lock()
+				lastActiveScene[groupRid] = ""
+				lastActiveSceneMu.Unlock()
+				return nil
+			}
+			return fmt.Errorf("could not find group for scene %s", id)
+		}
 	default:
 		return fmt.Errorf("unsupported resource type: %s", rtype)
 	}

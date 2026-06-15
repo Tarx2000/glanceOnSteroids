@@ -1074,8 +1074,19 @@ func (cm *ConfigManager) SaveSettings(branding interface{}, server interface{}, 
 	if err := updateTopLevelKey(rootMap, "branding", branding); err != nil {
 		return fmt.Errorf("failed to update branding settings: %w", err)
 	}
-	if err := updateTopLevelKey(rootMap, "server", server); err != nil {
-		return fmt.Errorf("failed to update server settings: %w", err)
+	serverNode := findMapValue(rootMap, "server")
+	if serverNode == nil || serverNode.Kind != yaml.MappingNode {
+		if err := updateTopLevelKey(rootMap, "server", server); err != nil {
+			return fmt.Errorf("failed to update server settings: %w", err)
+		}
+	} else {
+		timezone := ""
+		if sPayload, ok := server.(serverSettingsPayload); ok {
+			timezone = sPayload.Timezone
+		} else if sPayloadPtr, ok := server.(*serverSettingsPayload); ok {
+			timezone = sPayloadPtr.Timezone
+		}
+		updateMapValue(serverNode, "timezone", timezone)
 	}
 	if err := updateTopLevelKey(rootMap, "theme", theme); err != nil {
 		return fmt.Errorf("failed to update theme settings: %w", err)
