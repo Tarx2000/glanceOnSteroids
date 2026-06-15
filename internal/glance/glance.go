@@ -281,6 +281,8 @@ func (a *Application) Serve() error {
 	// Philips Hue Remote routes
 	mux.HandleFunc("GET /api/hue/login", a.HandleHueLogin)
 	mux.HandleFunc("GET /api/hue/callback", a.HandleHueCallback)
+	mux.HandleFunc("GET /api/hue", a.HandleHueCallback)
+	mux.HandleFunc("GET /api/hue/", a.HandleHueCallback)
 	mux.HandleFunc("GET /api/hue/resources", a.HandleHueResourcesGet)
 	mux.HandleFunc("POST /api/hue/control", a.HandleHueControl)
 
