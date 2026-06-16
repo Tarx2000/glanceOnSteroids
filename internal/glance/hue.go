@@ -19,9 +19,10 @@ import (
 )
 
 var (
-	hueConfig     HueConfig
-	hueStateMu    sync.Mutex
-	hueHTTPClient = &http.Client{Timeout: 10 * time.Second}
+	hueConfig          HueConfig
+	hueStateMu         sync.Mutex
+	hueTokenRefreshMu  sync.Mutex
+	hueHTTPClient      = &http.Client{Timeout: 10 * time.Second}
 
 	// lastActiveSceneMu protects access to the lastActiveScene map.
 	lastActiveSceneMu sync.RWMutex
@@ -57,14 +58,15 @@ func getHueRedirectURI(r *http.Request) string {
 }
 
 func getHueAccessToken() (string, error) {
-	accessToken, _ := Store.GetSetting("hue_access_token", "")
-	tokenExpiryStr, _ := Store.GetSetting("hue_access_token_expiry", "")
+	if token, ok := hueTokenStillValid(); ok {
+		return token, nil
+	}
 
-	if accessToken != "" && tokenExpiryStr != "" {
-		expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
-		if err == nil && time.Now().Unix() < expiry-60 {
-			return accessToken, nil
-		}
+	hueTokenRefreshMu.Lock()
+	defer hueTokenRefreshMu.Unlock()
+
+	if token, ok := hueTokenStillValid(); ok {
+		return token, nil
 	}
 
 	refreshToken, _ := Store.GetSetting("hue_refresh_token", "")
@@ -116,6 +118,22 @@ func getHueAccessToken() (string, error) {
 	}
 
 	return res.AccessToken, nil
+}
+
+func hueTokenStillValid() (string, bool) {
+	accessToken, _ := Store.GetSetting("hue_access_token", "")
+	tokenExpiryStr, _ := Store.GetSetting("hue_access_token_expiry", "")
+	if accessToken == "" || tokenExpiryStr == "" {
+		return "", false
+	}
+	expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
+	if err != nil {
+		return "", false
+	}
+	if time.Now().Unix() >= expiry-60 {
+		return "", false
+	}
+	return accessToken, true
 }
 
 // pairHueRemote links the remote Hue API to generate a username (application key)

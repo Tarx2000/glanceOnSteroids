@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/glanceapp/glance/internal/assets"
@@ -63,6 +64,13 @@ func init() {
 
 func (widget *Monitor) Initialize() error {
 	widget.withTitle("Monitor").withCacheDuration(5 * time.Minute)
+
+	for i := range widget.Sites {
+		if strings.HasPrefix(widget.Sites[i].IconUrl, "si:") {
+			icon := strings.TrimPrefix(widget.Sites[i].IconUrl, "si:")
+			widget.Sites[i].IconUrl = "https://cdnjs.cloudflare.com/ajax/libs/simple-icons/11.14.0/" + icon + ".svg"
+		}
+	}
 
 	return nil
 }

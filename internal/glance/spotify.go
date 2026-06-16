@@ -19,6 +19,7 @@ import (
 type SpotifyPoller struct {
 	config           SpotifyConfig
 	mu               sync.Mutex
+	tokenRefreshMu   sync.Mutex
 	lastTrackID      string
 	lastIsPlaying    bool
 	lastProgressMS   int
@@ -302,15 +303,18 @@ func (sp *SpotifyPoller) getSpotifyPlaybackStatus() (*SpotifyTrack, error) {
 }
 
 // getSpotifyAccessToken returns a valid access token, auto-refreshing it if needed.
+// Uses double-checked locking so only one goroutine performs a refresh at a time.
 func (sp *SpotifyPoller) getSpotifyAccessToken() (string, error) {
-	accessToken, _ := Store.GetSetting("spotify_access_token", "")
-	tokenExpiryStr, _ := Store.GetSetting("spotify_access_token_expiry", "")
-	
-	if accessToken != "" && tokenExpiryStr != "" {
-		expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
-		if err == nil && time.Now().Unix() < expiry-60 {
-			return accessToken, nil
-		}
+	if token, ok := spotifyTokenStillValid(); ok {
+		return token, nil
+	}
+
+	sp.tokenRefreshMu.Lock()
+	defer sp.tokenRefreshMu.Unlock()
+
+	// Double-check after acquiring lock in case another goroutine refreshed.
+	if token, ok := spotifyTokenStillValid(); ok {
+		return token, nil
 	}
 
 	refreshToken, _ := Store.GetSetting("spotify_refresh_token", "")
@@ -365,6 +369,22 @@ func (sp *SpotifyPoller) getSpotifyAccessToken() (string, error) {
 		}
 	}
 	return res.AccessToken, nil
+}
+
+func spotifyTokenStillValid() (string, bool) {
+	accessToken, _ := Store.GetSetting("spotify_access_token", "")
+	tokenExpiryStr, _ := Store.GetSetting("spotify_access_token_expiry", "")
+	if accessToken == "" || tokenExpiryStr == "" {
+		return "", false
+	}
+	expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
+	if err != nil {
+		return "", false
+	}
+	if time.Now().Unix() >= expiry-60 {
+		return "", false
+	}
+	return accessToken, true
 }
 
 // spotifyControlAction helper sends volume or playback command to Spotify API.

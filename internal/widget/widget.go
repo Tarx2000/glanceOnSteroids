@@ -142,6 +142,8 @@ type widgetBase struct {
 	Title               string        `yaml:"title"`
 	HideTitle           BoolField     `yaml:"hide-title"`
 	CustomCacheDuration DurationField `yaml:"cache"`
+	// Frameless removes border and padding around the widget content.
+	Frameless           BoolField     `yaml:"frameless"`
 	ContentAvailable    bool          `yaml:"-"`
 	Error               error         `yaml:"-"`
 	Notice              error         `yaml:"-"`

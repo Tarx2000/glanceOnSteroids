@@ -3,12 +3,15 @@ package glance
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/glanceapp/glance/internal/assets"
+	"gopkg.in/yaml.v3"
 )
 
 // HandlePageRequest handles loading the dashboard HTML shell.
@@ -174,4 +177,96 @@ func (a *Application) HandleConfigImport(w http.ResponseWriter, r *http.Request)
 
 	slog.Info("Config imported successfully", "filename", header.Filename)
 	w.WriteHeader(http.StatusOK)
+}
+
+// HandleConfigExport returns the current glance.yml contents as a download.
+func (a *Application) HandleConfigExport(w http.ResponseWriter, r *http.Request) {
+	a.configMu.RLock()
+	configPath := a.ConfigPath
+	a.configMu.RUnlock()
+
+	contentBytes, err := os.ReadFile(configPath)
+	if err != nil {
+		http.Error(w, "failed to read config file: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"glance.yml\"")
+	w.Write(contentBytes)
+}
+
+// HandleConfigPreview validates a candidate config and returns a preview summary.
+func (a *Application) HandleConfigPreview(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024)
+
+	contentBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "failed to read body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	type pagePreview struct {
+		Name        string `json:"name"`
+		Slug        string `json:"slug"`
+		WidgetCount int    `json:"widget_count"`
+	}
+
+	preview := struct {
+		Valid   bool          `json:"valid"`
+		Error   string        `json:"error,omitempty"`
+		Pages   []pagePreview `json:"pages,omitempty"`
+		Summary string        `json:"summary,omitempty"`
+	}{}
+
+	config := NewConfig()
+	if err := yaml.Unmarshal(contentBytes, config); err != nil {
+		preview.Error = "invalid YAML: " + err.Error()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(preview)
+		return
+	}
+
+	if err := configIsValid(config); err != nil {
+		preview.Error = "validation failed: " + err.Error()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(preview)
+		return
+	}
+
+	preview.Valid = true
+	for i := range config.Pages {
+		p := &config.Pages[i]
+		slug := p.Slug
+		if slug == "" {
+			slug = titleToSlug(p.Title)
+		}
+		count := len(p.HeadWidgets)
+		for _, c := range p.Columns {
+			count += len(c.Widgets)
+		}
+		preview.Pages = append(preview.Pages, pagePreview{
+			Name:        p.Title,
+			Slug:        slug,
+			WidgetCount: count,
+		})
+	}
+
+	totalWidgets := 0
+	for _, p := range preview.Pages {
+		totalWidgets += p.WidgetCount
+	}
+	preview.Summary = fmt.Sprintf("%d page%s with %d total widget%s",
+		len(preview.Pages), plural(len(preview.Pages)),
+		totalWidgets, plural(totalWidgets))
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(preview)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

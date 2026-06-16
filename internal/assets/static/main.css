@@ -1547,6 +1547,35 @@ body.modal-open .mobile-navigation {
     transition: opacity 0.2s;
 }
 
+/* Widget debug badges (hidden unless debug mode is enabled) */
+.widget-debug-badge {
+    display: none;
+}
+
+body.widget-debug-mode .widget:not(.widget-type-group) {
+    position: relative;
+}
+
+body.widget-debug-mode .widget-debug-badge {
+    display: flex;
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    gap: 6px;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-size: 0.65rem;
+    padding: 3px 7px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 10;
+    max-width: calc(100% - 8px);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
 body.modal-open {
     overflow: hidden;
 }
@@ -2153,9 +2182,10 @@ body.is-dragging .mobile-navigation {
 
 .confirm-modal-message {
     margin-bottom: 20px;
-    font-size: 1.2rem;
+    font-size: 1.05rem;
     color: var(--color-text-highlight);
     line-height: 1.5;
+    white-space: pre-wrap;
 }
 
 .confirm-modal-input {

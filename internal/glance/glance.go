@@ -153,7 +153,7 @@ func (p *Page) UpdateOutdatedWidgets(hub *Hub) bool {
 			select {
 			case <-done:
 				// Update completed within timeout
-			case <-time.After(20 * time.Second):
+			case <-widgetCtx.Done():
 				slog.Warn("Widget update timed out or hung during execution", "type", wd.GetType(), "col", col, "idx", idx)
 			}
 			
@@ -308,6 +308,8 @@ func (a *Application) Serve() error {
 	mux.HandleFunc("POST /api/pages/delete", a.HandlePageDelete)
 
 	mux.HandleFunc("POST /api/config/import", a.HandleConfigImport)
+	mux.HandleFunc("GET /api/config/export", a.HandleConfigExport)
+	mux.HandleFunc("POST /api/config/preview", a.HandleConfigPreview)
 
 	if a.Config.Server.AssetsPath != "" {
 		absAssetsPath, err := filepath.Abs(a.Config.Server.AssetsPath)
@@ -412,45 +414,64 @@ func (a *Application) reloadConfig() error {
 	oldPages := a.Config.Pages
 	a.configMu.RUnlock()
 
-	// Match and copy cached state from old configuration to the new one
+	// Match and copy cached state from old configuration to the new one.
+	// Pages are matched first by slug, then by title, so renaming a page
+	// still preserves widget state when the slug stays the same.
 	for i := range config.Pages {
 		newPage := &config.Pages[i]
-		
-		// Find matching old page
+		newSlug := newPage.Slug
+		if newSlug == "" {
+			newSlug = titleToSlug(newPage.Title)
+		}
+
 		var oldPage *Page
 		for i := range oldPages {
 			op := &oldPages[i]
-			if op.Title == newPage.Title {
+			oldSlug := op.Slug
+			if oldSlug == "" {
+				oldSlug = titleToSlug(op.Title)
+			}
+			if oldSlug != "" && oldSlug == newSlug {
 				oldPage = op
 				break
 			}
 		}
-		
+		// Fallback to title match if no slug match found.
+		if oldPage == nil {
+			for i := range oldPages {
+				op := &oldPages[i]
+				if op.Title == newPage.Title {
+					oldPage = op
+					break
+				}
+			}
+		}
+
 		if oldPage != nil {
 			oldWidgets := oldPage.GetFlatWidgets()
 			newWidgets := newPage.GetFlatWidgets()
-			
-			// Track matched old widgets to prevent duplicate matching
+
+			// Track matched old widgets to prevent duplicate matching.
 			matched := make(map[widget.Widget]bool)
-			
+
 			for _, nw := range newWidgets {
-				// Marshal new widget config to YAML to get a normalized config string
+				// Marshal new widget config to YAML to get a normalized config string.
 				nwYaml, err := yaml.Marshal(nw)
 				if err != nil {
 					continue
 				}
-				
-				// Search for a matching old widget that hasn't been matched yet
+
+				// Search for a matching old widget that hasn't been matched yet.
 				for _, ow := range oldWidgets {
 					if matched[ow] {
 						continue
 					}
-					
+
 					owYaml, err := yaml.Marshal(ow)
 					if err != nil {
 						continue
 					}
-					
+
 					if string(nwYaml) == string(owYaml) {
 						widget.CopyWidgetState(ow, nw)
 						matched[ow] = true

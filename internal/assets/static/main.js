@@ -196,6 +196,19 @@ function undoLastLayoutChange() {
     updateUndoButtonState();
 }
 
+function redoLastLayoutChange() {
+    if (historyIndex >= layoutHistory.length - 1) return;
+    historyIndex++;
+    const page = document.getElementById("page");
+    if (page && layoutHistory[historyIndex] !== undefined) {
+        page.innerHTML = layoutHistory[historyIndex];
+        // Re-bind edit mode UI since innerHTML wipe destroys listeners
+        enableWidgetsDraggability(false);
+        enableWidgetsDraggability(true);
+    }
+    updateUndoButtonState();
+}
+
 function updateUndoButtonState() {
     const btnUndo = document.getElementById("btn-undo-layout");
     if (!btnUndo) return;
@@ -338,6 +351,25 @@ function relativeTimeSince(timestamp) {
     }
 
     return Math.floor(delta / yearInSeconds) + "y";
+}
+
+function timeUntil(timestamp) {
+    const delta = Math.round(timestamp - (Date.now() / 1000));
+
+    if (delta <= 0) {
+        return "now";
+    }
+    if (delta < minuteInSeconds) {
+        return delta + "s";
+    }
+    if (delta < hourInSeconds) {
+        return Math.floor(delta / minuteInSeconds) + "m";
+    }
+    if (delta < dayInSeconds) {
+        return Math.floor(delta / hourInSeconds) + "h";
+    }
+
+    return Math.floor(delta / dayInSeconds) + "d";
 }
 
 function updateRelativeTimeForElements(elements) {
@@ -1462,16 +1494,6 @@ const widgetFieldTemplates = {
             <option value="24h">24 Hour Format</option>
             <option value="12h">12 Hour Format (AM/PM)</option>
         </select>
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">First Day of Week</label>
-        <select name="first-day-of-week" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;">
-            <option value="monday">Monday</option>
-            <option value="sunday">Sunday</option>
-            <option value="tuesday">Tuesday</option>
-            <option value="wednesday">Wednesday</option>
-            <option value="thursday">Thursday</option>
-            <option value="friday">Friday</option>
-            <option value="saturday">Saturday</option>
-        </select>
         <div id="google-calendars-container" style="display: none; margin-bottom: 10px;">
             <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Select Calendars</label>
             <div id="google-calendars-checkboxes" style="max-height: 150px; overflow-y: auto; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px;"></div>
@@ -1796,16 +1818,29 @@ const widgetFieldTemplates = {
                 </select>
             </div>
         </div>
-        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
-            <input type="checkbox" name="show-failing-only" style="cursor: pointer;" />
-            Show Failing Only
-        </label>
+        <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="show-failing-only" style="cursor: pointer;" />
+                Show Failing Only
+            </label>
+        </div>
     `,
     bookmarks: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Group Title (Optional)</label>
         <input type="text" name="group_title" placeholder="e.g. My Links" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Group Color (HSL)</label>
-        <input type="text" name="group_color" placeholder="e.g. 200 50 50" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+        <div style="display: flex; gap: 15px; margin-bottom: 12px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Group Color (HSL)</label>
+                <input type="text" name="group_color" placeholder="e.g. 200 50 50" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Style</label>
+                <select name="style" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;">
+                    <option value="">Default</option>
+                    <option value="dynamic-columns-experimental">Dynamic Columns</option>
+                </select>
+            </div>
+        </div>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Bookmark Links</label>
         <div class="bookmark-links" style="margin-bottom: 10px;"></div>
         <button type="button" id="btn-add-bookmark-link" style="padding: 6px 12px; font-size: 1.1rem; background: var(--color-background); border: 1px solid var(--color-primary); color: var(--color-primary); border-radius: 4px; cursor: pointer; font-family: inherit; transition: opacity 0.2s;">+ Add Another Link</button>
@@ -1874,8 +1909,14 @@ const widgetFieldTemplates = {
                 <input type="number" name="collapse-after" value="5" min="-1" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
             </div>
         </div>
+        <div style="margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="show-thumbnails" style="cursor: pointer;" />
+                Show Thumbnails
+            </label>
+        </div>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Comments URL Template (Optional)</label>
-        <input type="text" name="comments-url-template" placeholder="https://news.ycombinator.com/item?id={POST-ID}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <input type="text" name="comments-url-template" placeholder="https://news.ycombinator.com/item?id={POST-ID}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
     `,
     spotify: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Spotify Client ID (Optional)</label>
@@ -1972,6 +2013,35 @@ function setupAddWidgetModal() {
     const typeSelect = document.getElementById("widget-type-select");
     const columnSelect = document.getElementById("widget-column-select");
     const fieldsContainer = document.getElementById("widget-fields-container");
+    const typeSearch = document.getElementById("widget-type-search");
+    const searchResultsCount = document.getElementById("widget-search-results-count");
+
+    function filterWidgetTypes(query) {
+        const q = (query || "").toLowerCase().trim();
+        let visibleCount = 0;
+        let firstVisible = null;
+        Array.from(typeSelect.options).forEach(opt => {
+            const text = opt.textContent.toLowerCase();
+            const value = opt.value.toLowerCase();
+            const match = !q || text.includes(q) || value.includes(q);
+            opt.style.display = match ? "" : "none";
+            if (match) {
+                visibleCount++;
+                if (!firstVisible) firstVisible = opt;
+            }
+        });
+        if (searchResultsCount) {
+            searchResultsCount.textContent = `${visibleCount} type${visibleCount !== 1 ? "s" : ""}`;
+            searchResultsCount.style.display = q ? "block" : "none";
+        }
+        if (q && firstVisible) {
+            const selectedVisible = typeSelect.selectedOptions[0] && typeSelect.selectedOptions[0].style.display !== "none";
+            if (!selectedVisible) {
+                typeSelect.value = firstVisible.value;
+                typeSelect.dispatchEvent(new Event("change"));
+            }
+        }
+    }
 
     const showModal = () => {
         columnSelect.innerHTML = "";
@@ -1980,6 +2050,11 @@ function setupAddWidgetModal() {
             const size = col.classList.contains("page-column-full") ? "Full" : "Small";
             columnSelect.appendChild(new Option(`Column ${idx + 1} (${size})`, idx));
         });
+
+        if (typeSearch) {
+            typeSearch.value = "";
+            filterWidgetTypes("");
+        }
 
         typeSelect.dispatchEvent(new Event("change"));
         modal.style.display = "flex";
@@ -2044,6 +2119,10 @@ function setupAddWidgetModal() {
         }
     });
 
+    if (typeSearch) {
+        typeSearch.addEventListener("input", (e) => filterWidgetTypes(e.target.value));
+    }
+
     document.getElementById("btn-add-widget").addEventListener("click", showModal);
     const mobileAdd = document.getElementById("mobile-btn-add-widget");
     if (mobileAdd) {
@@ -2070,9 +2149,9 @@ function setupAddWidgetModal() {
                 properties[key] = parseInt(value, 10);
             } else if (key === "thumbnail-height" || key === "card-height") {
                 properties[key] = parseFloat(value);
-            } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
+            } else if (key === "site_title" || key === "site_url" || key === "site_icon" || key === "site_same_tab" || key === "link_title" || key === "link_url" || key === "link_icon" || key === "link_same_tab" || key === "link_hide_arrow" || key === "group_title") {
                 // Handled separately below
-            } else if (key === "rss_url" || key === "rss_title" || key === "rss_hide_categories" || key === "rss_hide_description" || key === "rss_limit" || key === "rss_item_link_prefix" || key === "rss_headers" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "videos_playlist" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id" || key === "timezone_id" || key === "timezone_label" || key === "monitor_site_check_url" || key === "monitor_site_icon" || key === "monitor_site_timeout" || key === "monitor_site_alt_status") {
+            } else if (key === "rss_url" || key === "rss_title" || key === "rss_hide_categories" || key === "rss_hide_description" || key === "rss_limit" || key === "rss_item_link_prefix" || key === "rss_headers" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "videos_playlist" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id" || key === "timezone_id" || key === "timezone_label") {
                 // Handled separately below
             } else {
                 properties[key] = value;
@@ -2280,32 +2359,50 @@ function setupAddWidgetModal() {
 
         if (type === "monitor") {
             const sites = [];
-            const siteTitles = formData.getAll("site_title");
-            const siteUrls = formData.getAll("site_url");
-            for (let i = 0; i < siteUrls.length; i++) {
-                if (siteUrls[i].trim()) {
-                    sites.push({
-                        title: siteTitles[i] ? siteTitles[i].trim() : "",
-                        url: siteUrls[i].trim()
-                    });
+            const siteItems = form.querySelectorAll(".monitor-item");
+            siteItems.forEach(item => {
+                const titleInput = item.querySelector("[name='site_title']");
+                const urlInput = item.querySelector("[name='site_url']");
+                const iconInput = item.querySelector("[name='site_icon']");
+                const sameTabCb = item.querySelector("[name='site_same_tab']");
+                const url = urlInput ? urlInput.value.trim() : "";
+                if (url) {
+                    const site = {
+                        title: titleInput ? titleInput.value.trim() : "",
+                        url: url
+                    };
+                    const icon = iconInput ? iconInput.value.trim() : "";
+                    if (icon) site.icon = icon;
+                    if (sameTabCb && sameTabCb.checked) site["same-tab"] = true;
+                    sites.push(site);
                 }
-            }
+            });
             properties["sites"] = sites;
         }
 
         // Special handling for bookmarks
         if (type === "bookmarks") {
             const links = [];
-            const linkTitles = formData.getAll("link_title");
-            const linkUrls = formData.getAll("link_url");
-            for (let i = 0; i < linkUrls.length; i++) {
-                if (linkUrls[i].trim()) {
-                    links.push({
-                        title: linkTitles[i] ? linkTitles[i].trim() : "",
-                        url: linkUrls[i].trim()
-                    });
+            const linkItems = form.querySelectorAll(".bookmark-link-item");
+            linkItems.forEach(item => {
+                const titleInput = item.querySelector("[name='link_title']");
+                const urlInput = item.querySelector("[name='link_url']");
+                const iconInput = item.querySelector("[name='link_icon']");
+                const sameTabCb = item.querySelector("[name='link_same_tab']");
+                const hideArrowCb = item.querySelector("[name='link_hide_arrow']");
+                const url = urlInput ? urlInput.value.trim() : "";
+                if (url) {
+                    const link = {
+                        title: titleInput ? titleInput.value.trim() : "",
+                        url: url
+                    };
+                    const icon = iconInput ? iconInput.value.trim() : "";
+                    if (icon) link.icon = icon;
+                    if (sameTabCb && sameTabCb.checked) link["same-tab"] = true;
+                    if (hideArrowCb && hideArrowCb.checked) link["hide-arrow"] = true;
+                    links.push(link);
                 }
-            }
+            });
             const groupObj = {
                 title: formData.get("group_title") ? formData.get("group_title").trim() : "Links",
                 links: links
@@ -2594,6 +2691,9 @@ function setupSettingsMenu() {
             form.elements["theme_widget_horizontal_padding"].value = (data.theme && data.theme["widget-content-horizontal-padding"]) || "";
             form.elements["theme_border_radius"].value = (data.theme && data.theme["border-radius"]) || "";
 
+            // Debug options are stored locally per browser.
+            form.elements["debug_widget_badges"].checked = localStorage.getItem("widgetDebugMode") === "true";
+
         modal.style.display = "flex";
         document.body.style.overflow = "hidden";
         setModalOpen(true);
@@ -2704,6 +2804,9 @@ function setupSettingsMenu() {
                     }
                 }
 
+                // Persist debug toggle locally (page will reload and init will apply it).
+                localStorage.setItem("widgetDebugMode", form.elements["debug_widget_badges"].checked ? "true" : "false");
+
                 window.location.reload();
             } else {
                 const err = await response.text();
@@ -2714,10 +2817,17 @@ function setupSettingsMenu() {
         }
     });
 
-    // Config import logic
+    // Config import / export logic
     const importBtn = document.getElementById("btn-config-import");
     const importFile = document.getElementById("config-import-file");
     const importStatus = document.getElementById("config-import-status");
+    const exportBtn = document.getElementById("btn-config-export");
+
+    if (exportBtn) {
+        exportBtn.addEventListener("click", () => {
+            window.location.href = "/api/config/export";
+        });
+    }
 
     if (importBtn && importFile) {
         importBtn.addEventListener("click", () => importFile.click());
@@ -2732,15 +2842,40 @@ function setupSettingsMenu() {
                 return;
             }
 
-            if (!await showConfirmModal("Importing a config file will replace your current configuration entirely. Continue?")) {
-                importFile.value = "";
-                return;
-            }
-
-            importStatus.textContent = "Importing...";
+            importStatus.textContent = "Validating...";
             importBtn.disabled = true;
 
             try {
+                const content = await file.text();
+
+                const previewResponse = await fetch("/api/config/preview", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-yaml" },
+                    body: content
+                });
+
+                const preview = await previewResponse.json();
+
+                if (!preview.valid) {
+                    showToast("Invalid config: " + preview.error, "error");
+                    importStatus.textContent = "Invalid config";
+                    importBtn.disabled = false;
+                    importFile.value = "";
+                    return;
+                }
+
+                let pageList = preview.pages.map(p => `• ${p.name} (${p.widget_count} widgets)`).join("\n");
+                const confirmMessage = `Import this config?\n\n${preview.summary}\n${pageList}\n\nThis will replace your current configuration entirely.`;
+
+                if (!await showConfirmModal(confirmMessage)) {
+                    importStatus.textContent = "";
+                    importBtn.disabled = false;
+                    importFile.value = "";
+                    return;
+                }
+
+                importStatus.textContent = "Importing...";
+
                 const formData = new FormData();
                 formData.append("file", file);
 
@@ -3132,6 +3267,10 @@ async function refreshWidget(col, idx, nestedIdx) {
             setupCarousels();
             setupDynamicRelativeTime();
             setupClocks();
+
+            if (document.body.classList.contains("widget-debug-mode")) {
+                renderWidgetDebugBadges();
+            }
         }
     } catch (e) {
         console.error(`[Refresh] Failed to refresh widget ${col}:${idx}:${nestedIdx}:`, e);
@@ -3219,6 +3358,10 @@ async function refreshPageContentsLive() {
     setupClocks();
     setupDynamicRelativeTime();
 
+    if (document.body.classList.contains("widget-debug-mode")) {
+        renderWidgetDebugBadges();
+    }
+
     // Apply cached Spotify auth state before WS reconnects to prevent UI flash
     const cachedAuth = localStorage.getItem("spotify_last_auth");
     if (cachedAuth === "true") {
@@ -3289,7 +3432,8 @@ function addStockInputField(container, symbol, name) {
 /**
  * Renders a site title and URL input block for the monitor widget.
  */
-function addMonitorSiteInput(container, title, url) {
+function addMonitorSiteInput(container, site) {
+    const { title = "", url = "", icon = "", sameTab = false } = site || {};
     const div = document.createElement("div");
     div.className = "monitor-item";
     div.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
@@ -3297,8 +3441,20 @@ function addMonitorSiteInput(container, title, url) {
         <button type="button" class="btn-remove-site" style="position: absolute; right: 0; top: 10px; background: transparent; border: 1px solid var(--color-negative); color: var(--color-negative); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem; font-family: inherit; font-weight: 600; cursor: pointer; transition: all 0.2s ease; z-index: 10; display: inline-flex; align-items: center; justify-content: center; line-height: 1;">× Remove</button>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site Title</label>
         <input type="text" name="site_title" placeholder="e.g. Google" required value="${title}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
-        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site URL</label>
-        <input type="url" name="site_url" placeholder="https://google.com" required value="${url}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <div style="display: flex; gap: 15px; margin-bottom: 8px;">
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Site URL</label>
+                <input type="url" name="site_url" placeholder="https://google.com" required value="${url}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+            <div style="flex: 1;">
+                <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Icon URL / si:name</label>
+                <input type="text" name="site_icon" placeholder="https://... or si:google" value="${icon}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+            </div>
+        </div>
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85em; opacity: 0.85; cursor: pointer; user-select: none;">
+            <input type="checkbox" name="site_same_tab" ${sameTab ? "checked" : ""} style="cursor: pointer;" />
+            Open in Same Tab
+        </label>
     `;
     container.appendChild(div);
     const btn = div.querySelector(".btn-remove-site");
@@ -3316,7 +3472,8 @@ function addMonitorSiteInput(container, title, url) {
 /**
  * Renders a link title and URL input block for the bookmarks widget.
  */
-function addBookmarkLinkInput(container, title, url) {
+function addBookmarkLinkInput(container, link) {
+    const { title = "", url = "", icon = "", sameTab = false, hideArrow = false } = link || {};
     const div = document.createElement("div");
     div.className = "bookmark-link-item";
     div.style.cssText = "border-top: 1px dashed var(--color-widget-content-border); padding-top: 10px; margin-top: 10px; position: relative;";
@@ -3325,7 +3482,19 @@ function addBookmarkLinkInput(container, title, url) {
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link Title</label>
         <input type="text" name="link_title" placeholder="e.g. My Link" required value="${title}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Link URL</label>
-        <input type="url" name="link_url" placeholder="https://example.com" required value="${url}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+        <input type="url" name="link_url" placeholder="https://example.com" required value="${url}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Icon URL / si:name (Optional)</label>
+        <input type="text" name="link_icon" placeholder="https://... or si:github" value="${icon}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 8px;" />
+        <div style="display: flex; gap: 15px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="link_same_tab" ${sameTab ? "checked" : ""} style="cursor: pointer;" />
+                Same Tab
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85em; opacity: 0.85; cursor: pointer; user-select: none;">
+                <input type="checkbox" name="link_hide_arrow" ${hideArrow ? "checked" : ""} style="cursor: pointer;" />
+                Hide Arrow
+            </label>
+        </div>
     `;
     container.appendChild(div);
     const btn = div.querySelector(".btn-remove-link");
@@ -3478,10 +3647,10 @@ function initDynamicFields(container, type, widget) {
 
         const sites = (widget && widget.sites) || [];
         itemsDiv.innerHTML = "";
-        sites.forEach(site => addMonitorSiteInput(itemsDiv, site.title || "", site.url || ""));
-        if (sites.length === 0) addMonitorSiteInput(itemsDiv, "", "");
+        sites.forEach(site => addMonitorSiteInput(itemsDiv, site));
+        if (sites.length === 0) addMonitorSiteInput(itemsDiv, null);
 
-        btnAdd.addEventListener("click", () => addMonitorSiteInput(itemsDiv, "", ""));
+        btnAdd.addEventListener("click", () => addMonitorSiteInput(itemsDiv, null));
     }
     else if (type === "bookmarks") {
         const itemsDiv = container.querySelector(".bookmark-links");
@@ -3490,14 +3659,19 @@ function initDynamicFields(container, type, widget) {
             const groups = (widget && widget.groups) || [];
             const links = (groups.length > 0 && groups[0].links) || [];
             itemsDiv.innerHTML = "";
-            links.forEach(link => addBookmarkLinkInput(itemsDiv, link.title || "", link.url || ""));
-            if (links.length === 0) addBookmarkLinkInput(itemsDiv, "", "");
-            btnAdd.addEventListener("click", () => addBookmarkLinkInput(itemsDiv, "", ""));
+            links.forEach(link => addBookmarkLinkInput(itemsDiv, link));
+            if (links.length === 0) addBookmarkLinkInput(itemsDiv, null);
+            btnAdd.addEventListener("click", () => addBookmarkLinkInput(itemsDiv, null));
         }
         if (widget && widget.groups && widget.groups.length > 0) {
+            const group = widget.groups[0];
             const colorInput = container.querySelector('[name="group_color"]');
-            if (colorInput && widget.groups[0].color) {
-                colorInput.value = widget.groups[0].color;
+            if (colorInput && group.color) {
+                colorInput.value = group.color;
+            }
+            const titleInput = container.querySelector('[name="group_title"]');
+            if (titleInput && group.title) {
+                titleInput.value = group.title;
             }
         }
     }
@@ -4181,9 +4355,9 @@ function setupEditWidgetModal() {
                 properties[key] = parseInt(value, 10);
             } else if (key === "thumbnail-height" || key === "card-height") {
                 properties[key] = parseFloat(value);
-            } else if (key === "site_title" || key === "site_url" || key === "link_title" || key === "link_url" || key === "group_title") {
+            } else if (key === "site_title" || key === "site_url" || key === "site_icon" || key === "site_same_tab" || key === "link_title" || key === "link_url" || key === "link_icon" || key === "link_same_tab" || key === "link_hide_arrow" || key === "group_title") {
                 // Handled separately below
-            } else if (key === "rss_url" || key === "rss_title" || key === "rss_hide_categories" || key === "rss_hide_description" || key === "rss_limit" || key === "rss_item_link_prefix" || key === "rss_headers" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "videos_playlist" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id" || key === "timezone_id" || key === "timezone_label" || key === "monitor_site_check_url" || key === "monitor_site_icon" || key === "monitor_site_timeout" || key === "monitor_site_alt_status") {
+            } else if (key === "rss_url" || key === "rss_title" || key === "rss_hide_categories" || key === "rss_hide_description" || key === "rss_limit" || key === "rss_item_link_prefix" || key === "rss_headers" || key === "stocks_symbol" || key === "stocks_name" || key === "videos_channel" || key === "videos_playlist" || key === "twitch_channel" || key === "repo_name" || key === "release_repo_name" || key === "twitch_exclude" || key === "google_calendar_id" || key === "timezone_id" || key === "timezone_label") {
                 // Handled separately below
             } else {
                 properties[key] = value;
@@ -4388,31 +4562,49 @@ function setupEditWidgetModal() {
 
         if (type === "monitor") {
             const sites = [];
-            const siteTitles = formData.getAll("site_title");
-            const siteUrls = formData.getAll("site_url");
-            for (let i = 0; i < siteUrls.length; i++) {
-                if (siteUrls[i].trim()) {
-                    sites.push({
-                        title: siteTitles[i] ? siteTitles[i].trim() : "",
-                        url: siteUrls[i].trim()
-                    });
+            const siteItems = form.querySelectorAll(".monitor-item");
+            siteItems.forEach(item => {
+                const titleInput = item.querySelector("[name='site_title']");
+                const urlInput = item.querySelector("[name='site_url']");
+                const iconInput = item.querySelector("[name='site_icon']");
+                const sameTabCb = item.querySelector("[name='site_same_tab']");
+                const url = urlInput ? urlInput.value.trim() : "";
+                if (url) {
+                    const site = {
+                        title: titleInput ? titleInput.value.trim() : "",
+                        url: url
+                    };
+                    const icon = iconInput ? iconInput.value.trim() : "";
+                    if (icon) site.icon = icon;
+                    if (sameTabCb && sameTabCb.checked) site["same-tab"] = true;
+                    sites.push(site);
                 }
-            }
+            });
             properties["sites"] = sites;
         }
 
         if (type === "bookmarks") {
             const links = [];
-            const linkTitles = formData.getAll("link_title");
-            const linkUrls = formData.getAll("link_url");
-            for (let i = 0; i < linkUrls.length; i++) {
-                if (linkUrls[i].trim()) {
-                    links.push({
-                        title: linkTitles[i] ? linkTitles[i].trim() : "",
-                        url: linkUrls[i].trim()
-                    });
+            const linkItems = form.querySelectorAll(".bookmark-link-item");
+            linkItems.forEach(item => {
+                const titleInput = item.querySelector("[name='link_title']");
+                const urlInput = item.querySelector("[name='link_url']");
+                const iconInput = item.querySelector("[name='link_icon']");
+                const sameTabCb = item.querySelector("[name='link_same_tab']");
+                const hideArrowCb = item.querySelector("[name='link_hide_arrow']");
+                const url = urlInput ? urlInput.value.trim() : "";
+                if (url) {
+                    const link = {
+                        title: titleInput ? titleInput.value.trim() : "",
+                        url: url
+                    };
+                    const icon = iconInput ? iconInput.value.trim() : "";
+                    if (icon) link.icon = icon;
+                    if (sameTabCb && sameTabCb.checked) link["same-tab"] = true;
+                    if (hideArrowCb && hideArrowCb.checked) link["hide-arrow"] = true;
+                    links.push(link);
                 }
-            }
+            });
             const groupObj = {
                 title: formData.get("group_title") ? formData.get("group_title").trim() : "Links",
                 links: links
@@ -4474,6 +4666,121 @@ function setupEditWidgetModal() {
 // Page Initialization
 // ----------------------------------------------------
 
+let widgetDebugInterval = null;
+
+function initWidgetDebugMode() {
+    const checkbox = document.getElementById("debug_widget_badges");
+    const enabled = localStorage.getItem("widgetDebugMode") === "true";
+    if (checkbox) checkbox.checked = enabled;
+    updateWidgetDebugMode(enabled, false);
+}
+
+function updateWidgetDebugMode(enabled, save = true) {
+    if (save) {
+        localStorage.setItem("widgetDebugMode", enabled ? "true" : "false");
+    }
+    if (enabled) {
+        document.body.classList.add("widget-debug-mode");
+        renderWidgetDebugBadges();
+        startWidgetDebugBadgeUpdater();
+    } else {
+        document.body.classList.remove("widget-debug-mode");
+        clearWidgetDebugBadges();
+        stopWidgetDebugBadgeUpdater();
+    }
+}
+
+function clearWidgetDebugBadges() {
+    document.querySelectorAll(".widget-debug-badge").forEach(b => b.remove());
+}
+
+function renderWidgetDebugBadges() {
+    if (!document.body.classList.contains("widget-debug-mode")) return;
+    const zeroTime = "0001-01-01T00:00:00Z";
+    document.querySelectorAll(".widget").forEach(widget => {
+        if (widget.classList.contains("widget-type-group")) return;
+
+        let badge = widget.querySelector(".widget-debug-badge");
+        if (!badge) {
+            badge = document.createElement("div");
+            badge.className = "widget-debug-badge";
+            widget.appendChild(badge);
+        }
+
+        const lastUpdate = widget.dataset.lastUpdate;
+        const nextUpdate = widget.dataset.nextUpdate;
+        const hasError = widget.dataset.hasError === "true";
+        const hasNotice = widget.dataset.hasNotice === "true";
+        const type = widget.dataset.widgetType || "";
+
+        const lastText = lastUpdate && lastUpdate !== zeroTime
+            ? "last " + relativeTimeSince(new Date(lastUpdate).getTime() / 1000)
+            : "never";
+        const nextText = nextUpdate && nextUpdate !== zeroTime
+            ? "next " + timeUntil(new Date(nextUpdate).getTime() / 1000)
+            : "";
+
+        let statusHtml = "";
+        if (hasError) {
+            statusHtml = ` <span style="color:var(--color-negative); font-weight:bold;">ERR</span>`;
+        } else if (hasNotice) {
+            statusHtml = ` <span style="color:var(--color-primary); font-weight:bold;">!</span>`;
+        }
+
+        badge.innerHTML = `<span style="opacity:0.7;">${type}</span> · ${lastText}${nextText ? " · " + nextText : ""}${statusHtml}`;
+        badge.title = `Last update: ${lastUpdate || "never"}\nNext update: ${nextUpdate || "N/A"}\nError: ${widget.dataset.errorMsg || "none"}\nNotice: ${widget.dataset.noticeMsg || "none"}`;
+    });
+}
+
+function startWidgetDebugBadgeUpdater() {
+    stopWidgetDebugBadgeUpdater();
+    widgetDebugInterval = setInterval(renderWidgetDebugBadges, 10000);
+}
+
+function stopWidgetDebugBadgeUpdater() {
+    if (widgetDebugInterval) {
+        clearInterval(widgetDebugInterval);
+        widgetDebugInterval = null;
+    }
+}
+
+function handleLayoutEditorShortcuts(e) {
+    const target = e.target;
+    const tag = target && target.tagName ? target.tagName.toLowerCase() : "";
+    const isInputFocused = tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
+    const hasModalOpen = document.body.classList.contains("modal-open");
+
+    if (isInputFocused || hasModalOpen) return;
+
+    const isEditMode = document.body.classList.contains("layout-edit-mode");
+    const mod = e.ctrlKey || e.metaKey;
+
+    if (e.key === "Escape") {
+        if (isEditMode) {
+            e.preventDefault();
+            toggleEditMode(false);
+        }
+        return;
+    }
+
+    if (!mod) return;
+
+    if (e.key.toLowerCase() === "e") {
+        e.preventDefault();
+        toggleEditMode(!isEditMode);
+    } else if (isEditMode && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        saveLayout();
+    } else if (isEditMode && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+            redoLastLayoutChange();
+        } else {
+            undoLastLayoutChange();
+        }
+    }
+}
+
 async function setupPage() {
     const pageElement = document.getElementById("page");
 
@@ -4501,15 +4808,9 @@ async function setupPage() {
     setupSettingsMenu();
     setupSpacingDesigner();
     setupClocks();
+    initWidgetDebugMode();
 
-    document.addEventListener("keydown", (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === "z") {
-            if (document.body.classList.contains("layout-edit-mode")) {
-                e.preventDefault();
-                undoLastLayoutChange();
-            }
-        }
-    });
+    document.addEventListener("keydown", handleLayoutEditorShortcuts);
 
     setupSpotifyControls();
     setupHueControls();

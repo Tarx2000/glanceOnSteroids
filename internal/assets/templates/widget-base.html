@@ -1,4 +1,11 @@
-<div class="widget widget-type-{{ .GetType }}{{ if .HideTitle }} widget-hide-title{{ end }}">
+<div class="widget widget-type-{{ .GetType }}{{ if .HideTitle }} widget-hide-title{{ end }}"
+    data-widget-type="{{ .GetType }}"
+    data-last-update="{{ .LastUpdate.Format "2006-01-02T15:04:05Z07:00" }}"
+    data-next-update="{{ .NextUpdate.Format "2006-01-02T15:04:05Z07:00" }}"
+    data-has-error="{{ if .Error }}true{{ else }}false{{ end }}"
+    data-error-msg="{{ .Error }}"
+    data-has-notice="{{ if .Notice }}true{{ else }}false{{ end }}"
+    data-notice-msg="{{ .Notice }}">
     <div class="widget-header">
         <div class="uppercase">{{ .Title }}</div>
         {{ if and .Error .ContentAvailable }}
@@ -7,7 +14,7 @@
         <div class="notice-icon notice-icon-minor" title="{{ .Notice }}"></div>
         {{ end }}
     </div>
-    <div class="widget-content {{ if .ContentAvailable }}{{ block "widget-content-classes" . }}{{ end }}{{ end }}">
+    <div class="widget-content{{ if .ContentAvailable }} {{ block "widget-content-classes" . }}{{ end }}{{ end }}{{ if .Frameless }} widget-content-frameless{{ end }}">
         {{ if .ContentAvailable }}
             {{ block "widget-content" . }}{{ end }}
         {{ else }}

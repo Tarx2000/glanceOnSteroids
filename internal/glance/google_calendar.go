@@ -17,9 +17,10 @@ import (
 )
 
 var (
-	googleConfig   GoogleConfig
-	googleStateMu  sync.Mutex
-	googleHTTPClient = &http.Client{Timeout: 10 * time.Second}
+	googleConfig        GoogleConfig
+	googleStateMu       sync.Mutex
+	googleTokenRefreshMu sync.Mutex
+	googleHTTPClient    = &http.Client{Timeout: 10 * time.Second}
 )
 
 // InitGoogle configures Google client credentials and redirect URI.
@@ -67,15 +68,17 @@ func getGoogleRedirectURI(r *http.Request) string {
 }
 
 // getGoogleAccessToken returns a valid access token, refreshing it if expired.
+// Uses double-checked locking so only one goroutine performs a refresh at a time.
 func getGoogleAccessToken() (string, error) {
-	accessToken, _ := Store.GetSetting("google_access_token", "")
-	tokenExpiryStr, _ := Store.GetSetting("google_access_token_expiry", "")
+	if token, ok := googleTokenStillValid(); ok {
+		return token, nil
+	}
 
-	if accessToken != "" && tokenExpiryStr != "" {
-		expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
-		if err == nil && time.Now().Unix() < expiry-60 {
-			return accessToken, nil
-		}
+	googleTokenRefreshMu.Lock()
+	defer googleTokenRefreshMu.Unlock()
+
+	if token, ok := googleTokenStillValid(); ok {
+		return token, nil
 	}
 
 	refreshToken, _ := Store.GetSetting("google_refresh_token", "")
@@ -126,6 +129,22 @@ func getGoogleAccessToken() (string, error) {
 	}
 
 	return res.AccessToken, nil
+}
+
+func googleTokenStillValid() (string, bool) {
+	accessToken, _ := Store.GetSetting("google_access_token", "")
+	tokenExpiryStr, _ := Store.GetSetting("google_access_token_expiry", "")
+	if accessToken == "" || tokenExpiryStr == "" {
+		return "", false
+	}
+	expiry, err := strconv.ParseInt(tokenExpiryStr, 10, 64)
+	if err != nil {
+		return "", false
+	}
+	if time.Now().Unix() >= expiry-60 {
+		return "", false
+	}
+	return accessToken, true
 }
 
 // GoogleCalendarEntry represents a calendar resource in Google.

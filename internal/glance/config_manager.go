@@ -1186,6 +1186,10 @@ var yamlKnownIntKeys = map[string]bool{
 	"port":                true,
 	"pull-requests-limit": true,
 	"issues-limit":        true,
+	"viewport-limit":      true,
+	"max-days-ahead":      true,
+	"commits-limit":       true,
+	"collapse-after-rows": true,
 }
 
 func fixYamlScalarTypes(node *yaml.Node) {

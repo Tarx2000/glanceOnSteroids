@@ -17,7 +17,7 @@ type HackerNews struct {
 	ExtraSortBy         string          `yaml:"extra-sort-by"`
 	CollapseAfter       int             `yaml:"collapse-after"`
 	CommentsUrlTemplate string          `yaml:"comments-url-template"`
-	ShowThumbnails      bool            `yaml:"-"`
+	ShowThumbnails      bool            `yaml:"show-thumbnails"`
 }
 
 func init() {

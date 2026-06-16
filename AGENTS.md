@@ -13,6 +13,7 @@ It features a layout editor with drag-and-drop, real-time Spotify playback via W
 - **Database:** SQLite via `modernc.org/sqlite`.
 - **Config:** `glance.yml` is the single source of truth; all runtime mutations write back to it while preserving structure/comments via YAML AST.
 - **Widget Modal Completeness & UI/UX:** When creating or modifying widgets, it is critical to ensure that all configuration properties supported by the widget are fully exposed in both the "Add Widget" and "Edit Widget" modals. Keep the inputs clean, modern, and intuitive, prioritizing simple and highly responsive UI/UX.
+- **Widget Template Rendering Safety:** In shared templates (specifically `widget-base.html`), never evaluate fields that are specific to certain widget types without checking for their availability (or defining them in the base `widgetBase` struct in `internal/widget/widget.go`). Go's `html/template` package fails hard when evaluating missing fields on structs, causing the entire widget to return empty HTML and disappear from the page.
 
 ## Known Architectural Notes
 
