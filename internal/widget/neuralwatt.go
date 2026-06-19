@@ -48,6 +48,7 @@ type NeuralWatt struct {
 	QuotaPercentLeft   float64                  `yaml:"-"`                     // Energy remaining percentage in this billing cycle
 	QuotaBillingPeriodStr string                 `yaml:"-"`                     // Formatted billing period string e.g., "dd.MM.yyyy – dd.MM.yyyy"
 	QuotaPercentLeftScale float64                `yaml:"-"`                     // Scale value (0.0 to 1.0) of remaining quota for progress bar scale
+	QuotaGaugeOffset      float64                `yaml:"-"`                     // stroke-dashoffset for the SVG gauge arc
 }
 
 func init() {
@@ -144,6 +145,7 @@ func (widget *NeuralWatt) Update(ctx context.Context, services ExternalServicePr
 		widget.QuotaPercentUsed = pctUsed
 		widget.QuotaPercentLeft = pctLeft
 		widget.QuotaPercentLeftScale = pctLeft / 100.0
+		widget.QuotaGaugeOffset = 125.66 * (1.0 - (pctLeft / 100.0))
 		widget.QuotaBillingPeriodStr = billingPeriodStr
 		widget.Unlock()
 

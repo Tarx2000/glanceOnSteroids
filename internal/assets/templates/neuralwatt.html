@@ -3,182 +3,62 @@
 {{ define "widget-content" }}
 {{ if eq .View "quota" }}
   {{ if .Quota }}
-  <div class="nw-quota-container">
-    <style>
-      .nw-quota-container {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        padding: 4px;
-        font-family: inherit;
-      }
-      .nw-quota-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .nw-quota-plan-wrap {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-      .nw-quota-plan {
-        font-size: 1.05rem;
-        font-weight: 600;
-        text-transform: capitalize;
-        color: var(--color-primary-text, inherit);
-      }
-      .nw-quota-interval {
-        font-size: 0.75rem;
-        opacity: 0.6;
-        text-transform: capitalize;
-      }
-      .nw-quota-badge {
-        font-size: 0.75rem;
-        font-weight: bold;
-        padding: 4px 10px;
-        border-radius: 20px;
-        background: rgba(46, 213, 115, 0.1);
-        color: #2ed573;
-        border: 1px solid rgba(46, 213, 115, 0.2);
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      }
-      .nw-quota-badge.warning {
-        background: rgba(255, 165, 0, 0.1);
-        color: #ffa500;
-        border: 1px solid rgba(255, 165, 0, 0.2);
-      }
-      .nw-quota-badge.danger {
-        background: rgba(255, 71, 87, 0.1);
-        color: #ff4757;
-        border: 1px solid rgba(255, 71, 87, 0.2);
-      }
-      .nw-quota-progress-wrapper {
-        margin-top: 4px;
-      }
-      .nw-quota-progress-label {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.85rem;
-        margin-bottom: 6px;
-        opacity: 0.9;
-      }
-      .nw-quota-progress-percent {
-        font-weight: bold;
-        font-variant-numeric: tabular-nums;
-      }
-      .nw-quota-progress-bg {
-        height: 8px;
-        background: var(--color-widget-content-border);
-        border-radius: 4px;
-        overflow: hidden;
-        position: relative;
-      }
-      .nw-quota-progress-fill {
-        height: 100%;
-        border-radius: 4px;
-        background: linear-gradient(90deg, #2ed573, #1e90ff);
-        width: 100%;
-        transform-origin: left;
-        transform: scaleX(0);
-        transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-      }
-      .nw-quota-progress-fill.warning {
-        background: linear-gradient(90deg, #ffa500, #ff7f50);
-      }
-      .nw-quota-progress-fill.danger {
-        background: linear-gradient(90deg, #ff4757, #ff6b81);
-      }
-      .nw-quota-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-top: 6px;
-      }
-      .nw-quota-card {
-        background: var(--color-background);
-        border: 1px solid var(--color-widget-content-border);
-        border-radius: 6px;
-        padding: 8px 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        transition: border-color 0.2s ease;
-      }
-      .nw-quota-card:hover {
-        border-color: var(--color-primary);
-      }
-      .nw-quota-card-label {
-        font-size: 0.7rem;
-        opacity: 0.6;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        font-weight: 600;
-      }
-      .nw-quota-card-value {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: var(--color-primary-text, inherit);
-      }
-    </style>
-    
-    <div class="nw-quota-header">
-      <div class="nw-quota-plan-wrap">
-        <span class="nw-quota-plan">{{ .Quota.Subscription.Plan }} Plan</span>
-        <span class="nw-quota-interval">{{ .Quota.Subscription.BillingInterval }}ly</span>
-      </div>
-      <div class="nw-quota-badge {{ if le .QuotaDaysRemaining 3 }}danger{{ else if le .QuotaDaysRemaining 7 }}warning{{ end }}">
-        {{ if le .QuotaDaysRemaining 0 }}
-          Ends today
-        {{ else if eq .QuotaDaysRemaining 1 }}
-          1 day left
-        {{ else }}
-          {{ .QuotaDaysRemaining }} days left
-        {{ end }}
+  <div class="nw-widget">
+    <div class="nw-gauge-container">
+      <div class="nw-gauge-wrapper">
+        <svg class="nw-gauge-svg" viewBox="0 0 100 58">
+          <!-- Background semi-circular track -->
+          <path d="M 10 48 A 40 40 0 0 1 90 48" fill="none" stroke="var(--color-widget-content-border)" stroke-width="4.5" stroke-linecap="round"></path>
+          <!-- Foreground gauge fill representing remaining quota -->
+          <path class="nw-cradle-glow" d="M 10 48 A 40 40 0 0 1 90 48" fill="none" stroke-linecap="round" stroke-width="4.5"
+                stroke-dasharray="125.66" 
+                stroke-dashoffset="{{ printf "%.2f" .QuotaGaugeOffset }}"></path>
+        </svg>
+        <div class="nw-gauge-center">
+          <div class="nw-gauge-value">{{ printf "%.1f%%" .QuotaPercentLeft }}</div>
+          <div class="nw-gauge-label">Quota Left</div>
+        </div>
       </div>
     </div>
 
-    <div class="nw-quota-progress-wrapper">
-      <div class="nw-quota-progress-label">
-        <span>Quota remaining</span>
-        <span class="nw-quota-progress-percent">{{ printf "%.1f" .QuotaPercentLeft }}%</span>
+    <div class="nw-stats-grid">
+      <div class="nw-stat">
+        <div class="nw-stat-value">{{ printf "%.3f" .Quota.Subscription.KwhUsed }} / {{ printf "%.1f" .Quota.Subscription.KwhIncluded }} kWh</div>
+        <div class="nw-stat-label">Energy Used</div>
       </div>
-      <div class="nw-quota-progress-bg">
-        <div class="nw-quota-progress-fill {{ if lt .QuotaPercentLeft 20.0 }}danger{{ else if lt .QuotaPercentLeft 50.0 }}warning{{ end }}" 
-             style="transform: scaleX({{ printf "%.4f" .QuotaPercentLeftScale }});"></div>
+      <div class="nw-stat">
+        <div class="nw-stat-value">{{ printf "%.3f" .Quota.Subscription.KwhRemaining }} kWh</div>
+        <div class="nw-stat-label">Energy Left</div>
       </div>
     </div>
 
-    <div class="nw-quota-grid">
-      <div class="nw-quota-card">
-        <span class="nw-quota-card-label">Billing Period</span>
-        <span class="nw-quota-card-value">{{ .QuotaBillingPeriodStr }}</span>
+    <div class="nw-today">
+      <div class="nw-today-title">Subscription Status</div>
+      <div class="nw-today-row">
+        <span class="nw-today-label">Plan</span>
+        <span class="nw-today-value" style="text-transform: capitalize;">{{ .Quota.Subscription.Plan }} ({{ .Quota.Subscription.BillingInterval }}ly)</span>
       </div>
-      <div class="nw-quota-card">
-        <span class="nw-quota-card-label">Concurrent Slots</span>
-        <span class="nw-quota-card-value">
-          {{ if .Quota.Limits.ConcurrentSlots }}
-            {{ .Quota.Limits.ConcurrentSlots }}
-          {{ else }}
-            3
-          {{ end }} ({{ .Quota.Limits.RateLimitTier }})
+      <div class="nw-today-row">
+        <span class="nw-today-label">Billing Period</span>
+        <span class="nw-today-value">{{ .QuotaBillingPeriodStr }}</span>
+      </div>
+      <div class="nw-today-row">
+        <span class="nw-today-label">Concurrent Slots</span>
+        <span class="nw-today-value">
+          {{ if .Quota.Limits.ConcurrentSlots }}{{ .Quota.Limits.ConcurrentSlots }}{{ else }}3{{ end }} ({{ .Quota.Limits.RateLimitTier }})
         </span>
       </div>
-      <div class="nw-quota-card">
-        <span class="nw-quota-card-label">Energy Used</span>
-        <span class="nw-quota-card-value">{{ printf "%.3f" .Quota.Subscription.KwhUsed }} / {{ printf "%.1f" .Quota.Subscription.KwhIncluded }} kWh</span>
-      </div>
-      <div class="nw-quota-card">
-        <span class="nw-quota-card-label">Energy Left</span>
-        <span class="nw-quota-card-value">{{ printf "%.3f" .Quota.Subscription.KwhRemaining }} kWh</span>
-      </div>
-      <div class="nw-quota-card">
-        <span class="nw-quota-card-label">Overage?</span>
-        <span class="nw-quota-card-value">{{ if .Quota.Subscription.InOverage }}Yes{{ else }}No{{ end }}</span>
-      </div>
-      <div class="nw-quota-card">
-        <span class="nw-quota-card-label">Credit Balance</span>
-        <span class="nw-quota-card-value">{{ printf "$%.2f" .Quota.Balance.CreditsRemainingUSD }} of {{ printf "$%.2f" .Quota.Balance.TotalCreditsUSD }}</span>
+      <div class="nw-today-row">
+        <span class="nw-today-label">Subscription Ends</span>
+        <span class="nw-today-value">
+          {{ if le .QuotaDaysRemaining 0 }}
+            Ends today
+          {{ else if eq .QuotaDaysRemaining 1 }}
+             1 day left
+          {{ else }}
+             {{ .QuotaDaysRemaining }} days left
+          {{ end }}
+        </span>
       </div>
     </div>
   </div>

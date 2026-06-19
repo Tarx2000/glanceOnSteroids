@@ -136,6 +136,11 @@ func TestNeuralWattWidgetQuotaView(t *testing.T) {
 		t.Errorf("expected percent left scale around 0.9061, got: %f", nwWidget.QuotaPercentLeftScale)
 	}
 
+	// Verify gauge offset (125.66 * (1.0 - 0.906166...))
+	if nwWidget.QuotaGaugeOffset < 11.78 || nwWidget.QuotaGaugeOffset > 11.80 {
+		t.Errorf("expected gauge offset around 11.79, got: %f", nwWidget.QuotaGaugeOffset)
+	}
+
 	// Verify remaining days calculation relative to current time.
 	// Since mock current_period_end is "2026-07-18T00:00:00Z" and current test time is 2026-06-19,
 	// days remaining should be around 28-29 days.
