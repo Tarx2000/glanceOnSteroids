@@ -30,17 +30,24 @@ type NeuralWatt struct {
 	widgetBase          `yaml:",inline"`
 	ApiKey             OptionalEnvString       `yaml:"api-key"`
 	UpdateIntervalMins  int                     `yaml:"update-interval"`
-	Summary            *feed.NeuralWattSummary  `yaml:"-"`
-	Energy             *feed.NeuralWattEnergy   `yaml:"-"`
-	DailyChartData     []NeuralWattDailyBar     `yaml:"-"`
-	EnergyChartData    []NeuralWattEnergyBar    `yaml:"-"`
-	TodayCost          float64                  `yaml:"-"`
-	TodayRequests       int                     `yaml:"-"`
-	TodayEnergyKwh     float64                  `yaml:"-"`
-	TodayTokens        int                     `yaml:"-"`
-	EstimatedTokenCost float64                  `yaml:"-"`
-	TodayDateLabel     string                   `yaml:"-"`
-	NoticeMessage      string                   `yaml:"-"`
+	View               string                  `yaml:"view"`                  // The selected view mode: "paygo" (default) or "quota"
+	Summary            *feed.NeuralWattSummary  `yaml:"-"`                     // 30-day token usage summary
+	Energy             *feed.NeuralWattEnergy   `yaml:"-"`                     // Daily energy usage metrics
+	Quota              *feed.NeuralWattQuota    `yaml:"-"`                     // Account quota status details
+	DailyChartData     []NeuralWattDailyBar     `yaml:"-"`                     // Formatted dataset for the requests chart
+	EnergyChartData    []NeuralWattEnergyBar    `yaml:"-"`                     // Formatted dataset for the energy usage chart
+	TodayCost          float64                  `yaml:"-"`                     // Running cost calculated for the active day
+	TodayRequests       int                     `yaml:"-"`                     // Total request counter for the active day
+	TodayEnergyKwh     float64                  `yaml:"-"`                     // Kilowatt hours consumed during the active day
+	TodayTokens        int                     `yaml:"-"`                     // Tokens generated/processed during the active day
+	EstimatedTokenCost float64                  `yaml:"-"`                     // Local estimation of token pricing costs
+	TodayDateLabel     string                   `yaml:"-"`                     // Human-readable date label formatted in timezone
+	NoticeMessage      string                   `yaml:"-"`                     // Notice message shown for timezone crossover periods
+	QuotaDaysRemaining int                      `yaml:"-"`                     // Days remaining in the current billing cycle
+	QuotaPercentUsed   float64                  `yaml:"-"`                     // Energy consumed percentage in this billing cycle
+	QuotaPercentLeft   float64                  `yaml:"-"`                     // Energy remaining percentage in this billing cycle
+	QuotaBillingPeriodStr string                 `yaml:"-"`                     // Formatted billing period string e.g., "dd.MM.yyyy – dd.MM.yyyy"
+	QuotaPercentLeftScale float64                `yaml:"-"`                     // Scale value (0.0 to 1.0) of remaining quota for progress bar scale
 }
 
 func init() {
@@ -56,7 +63,7 @@ var (
 	CompletionTokenPriceUSD = 2.00
 )
 
-// Initialize configures the title and the custom cache duration (update interval)
+// Initialize configures the title, default view mode, and the custom cache duration (update interval)
 // for the NeuralWatt widget, falling back to 15 minutes if not specified.
 func (widget *NeuralWatt) Initialize() error {
 	widget.withTitle("NeuralWatt")
@@ -72,15 +79,79 @@ func (widget *NeuralWatt) Initialize() error {
 		return fmt.Errorf("neuralwatt widget requires an api-key")
 	}
 
+	// Default the display view option to paygo price if not specified
+	if widget.View == "" {
+		widget.View = "paygo"
+	}
+
 	return nil
 }
 
-// Update retrieves the summary and energy data from the NeuralWatt service,
-// processes it using local variables, and updates the widget state under a mutex lock
-// to prevent concurrent data access races.
+// Update retrieves the summary and energy data (for paygo view) or subscription quota (for quota view)
+// from the NeuralWatt service, processes it using local variables, and updates the widget state
+// under a mutex lock to prevent concurrent data access races.
 func (widget *NeuralWatt) Update(ctx context.Context, services ExternalServiceProvider) {
 	apiKey := string(widget.ApiKey)
 
+	if widget.View == "quota" {
+		quota, err := feed.FetchNeuralWattQuota(ctx, apiKey)
+		if err != nil {
+			widget.canContinueUpdateAfterHandlingErr(err)
+			return
+		}
+
+		// Calculate remaining days until subscription ends
+		var daysRemaining int
+		if quota.Subscription.CurrentPeriodEnd != "" {
+			tEnd, err := time.Parse(time.RFC3339, quota.Subscription.CurrentPeriodEnd)
+			if err == nil {
+				duration := tEnd.Sub(time.Now())
+				daysRemaining = int(math.Ceil(duration.Hours() / 24.0))
+				if daysRemaining < 0 {
+					daysRemaining = 0
+				}
+			}
+		}
+
+		// Format the billing period into user-friendly dd.MM.yyyy format
+		var billingPeriodStr string
+		if quota.Subscription.CurrentPeriodStart != "" && quota.Subscription.CurrentPeriodEnd != "" {
+			tStart, err1 := time.Parse(time.RFC3339, quota.Subscription.CurrentPeriodStart)
+			tEnd, err2 := time.Parse(time.RFC3339, quota.Subscription.CurrentPeriodEnd)
+			if err1 == nil && err2 == nil {
+				billingPeriodStr = fmt.Sprintf("%s – %s", tStart.Format("02.01.2006"), tEnd.Format("02.01.2006"))
+			}
+		}
+
+		// Calculate the energy limit usage/remaining percentages
+		var pctUsed, pctLeft float64
+		if quota.Subscription.KwhIncluded > 0 {
+			pctUsed = (quota.Subscription.KwhUsed / quota.Subscription.KwhIncluded) * 100
+			if pctUsed > 100 {
+				pctUsed = 100
+			} else if pctUsed < 0 {
+				pctUsed = 0
+			}
+			pctLeft = 100 - pctUsed
+		} else {
+			pctLeft = 0
+		}
+
+		// Update the shared widget state with thread safety
+		widget.Lock()
+		widget.Quota = &quota
+		widget.QuotaDaysRemaining = daysRemaining
+		widget.QuotaPercentUsed = pctUsed
+		widget.QuotaPercentLeft = pctLeft
+		widget.QuotaPercentLeftScale = pctLeft / 100.0
+		widget.QuotaBillingPeriodStr = billingPeriodStr
+		widget.Unlock()
+
+		widget.canContinueUpdateAfterHandlingErr(nil)
+		return
+	}
+
+	// Paygo Price View (Original Logic)
 	summary, err := feed.FetchNeuralWattSummary(ctx, apiKey)
 	if err != nil {
 		widget.canContinueUpdateAfterHandlingErr(err)

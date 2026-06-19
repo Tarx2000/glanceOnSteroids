@@ -1948,6 +1948,11 @@ const widgetFieldTemplates = {
     neuralwatt: `
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">NeuralWatt API Key</label>
         <input type="password" name="api-key" placeholder="sk-..." required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Widget View</label>
+        <select name="view" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;">
+            <option value="paygo">Paygo Price</option>
+            <option value="quota">Subscription Quota</option>
+        </select>
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Update Interval (minutes)</label>
         <input type="number" name="update-interval" value="15" min="1" max="1440" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `,
