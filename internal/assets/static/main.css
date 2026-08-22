@@ -2610,4 +2610,305 @@ body.is-dragging .mobile-navigation {
     transform: scale(0.97);
 }
 
+/* Hermes Approve Widget Styles */
+.hermes-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.hermes-header-status {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.hermes-count-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    background: rgba(var(--color-primary-rgb, 0, 122, 255), 0.15);
+    color: var(--color-primary);
+    border: 1px solid rgba(var(--color-primary-rgb, 0, 122, 255), 0.25);
+}
+
+.hermes-empty-state {
+    text-align: center;
+    padding: 24px 12px;
+    opacity: 0.7;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.hermes-empty-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: rgba(40, 199, 111, 0.12);
+    color: #28c76f;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 4px;
+}
+
+.hermes-empty-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text-highlight);
+}
+
+.hermes-empty-sub {
+    font-size: 0.78rem;
+    opacity: 0.65;
+}
+
+.hermes-cards-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.hermes-card {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: 8px;
+    padding: 12px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hermes-card:hover {
+    border-color: rgba(var(--color-primary-rgb, 0, 122, 255), 0.4);
+}
+
+.hermes-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.hermes-pill-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.hermes-pill {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    line-height: 1.2;
+}
+
+.hermes-pill-kind {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--color-text-highlight);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.hermes-pill-warn {
+    background: rgba(255, 171, 0, 0.15);
+    color: #ffab00;
+    border: 1px solid rgba(255, 171, 0, 0.3);
+}
+
+.hermes-time {
+    font-size: 0.72rem;
+    opacity: 0.5;
+    white-space: nowrap;
+}
+
+.hermes-card-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--color-text-highlight);
+    line-height: 1.35;
+    margin-bottom: 6px;
+    word-break: break-word;
+}
+
+.hermes-prompt-wrapper {
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+}
+
+.hermes-prompt-preview {
+    font-family: var(--font-mono, monospace);
+    font-size: 0.78rem;
+    opacity: 0.85;
+    word-break: break-all;
+    line-height: 1.3;
+}
+
+.hermes-toggle-prompt-btn {
+    background: none;
+    border: none;
+    color: var(--color-primary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    margin-top: 4px;
+    outline: none;
+}
+
+.hermes-toggle-chevron {
+    transition: transform 0.2s ease;
+}
+
+.hermes-prompt-full {
+    margin-top: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.hermes-code-block {
+    margin: 0;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.76rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.35;
+    color: var(--color-text-highlight);
+}
+
+.hermes-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+
+.hermes-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    outline: none;
+}
+
+.hermes-approve-btn {
+    background: rgba(40, 199, 111, 0.15);
+    border: 1px solid rgba(40, 199, 111, 0.35);
+    color: #28c76f;
+}
+
+.hermes-approve-btn:hover {
+    background: #28c76f;
+    border-color: #28c76f;
+    color: #fff;
+    box-shadow: 0 0 10px rgba(40, 199, 111, 0.4);
+    transform: translateY(-1px);
+}
+
+.hermes-reject-btn {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--color-widget-content-border);
+    color: var(--color-text-dim);
+}
+
+.hermes-reject-btn:hover {
+    background: rgba(234, 84, 85, 0.18);
+    border-color: rgba(234, 84, 85, 0.5);
+    color: #ea5455;
+    transform: translateY(-1px);
+}
+
+.hermes-edit-toggle-btn {
+    background: none;
+    border: 1px solid var(--color-widget-content-border);
+    color: var(--color-text-dim);
+    margin-left: auto;
+}
+
+.hermes-edit-toggle-btn:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    transform: translateY(-1px);
+}
+
+.hermes-edit-field {
+    margin-bottom: 8px;
+}
+
+.hermes-edit-label {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    display: block;
+    margin-bottom: 3px;
+}
+
+.hermes-edit-input {
+    width: 100%;
+    padding: 6px 8px;
+    background: var(--color-background);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: 4px;
+    color: inherit;
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.hermes-edit-textarea {
+    width: 100%;
+    padding: 6px 8px;
+    background: var(--color-background);
+    border: 1px solid var(--color-widget-content-border);
+    border-radius: 4px;
+    color: inherit;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.8rem;
+    outline: none;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.hermes-save-btn {
+    background: var(--color-primary);
+    border: 1px solid var(--color-primary);
+    color: #fff;
+}
+
+.hermes-save-btn:hover {
+    opacity: 0.9;
+    box-shadow: 0 0 10px rgba(var(--color-primary-rgb, 0, 122, 255), 0.35);
+    transform: translateY(-1px);
+}
+
+.hermes-cancel-btn {
+    background: none;
+    border: 1px solid var(--color-widget-content-border);
+    color: inherit;
+}
+
+.hermes-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+
 

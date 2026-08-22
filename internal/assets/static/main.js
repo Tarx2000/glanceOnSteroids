@@ -1450,7 +1450,8 @@ const defaultCacheDurations = {
     weather: "1h",
     mvv: "2m",
     gmail: "10m",
-    hue: "1m"
+    hue: "1m",
+    "hermes-approve": "15s"
 };
 
 function parseDurationToHoursMinutes(durationStr) {
@@ -2000,6 +2001,14 @@ const widgetFieldTemplates = {
             <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Räume / Lampen / Szenen auswählen</label>
             <div id="hue-resources-checkboxes" style="max-height: 200px; overflow-y: auto; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; display: flex; flex-direction: column; gap: 6px;"></div>
         </div>
+    `,
+    "hermes-approve": `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Hermes API URL</label>
+        <input type="text" name="api-url" placeholder="http://localhost:3000" value="http://localhost:3000" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">API Key / Bearer Token (optional)</label>
+        <input type="password" name="api-key" placeholder="Optional secret token / key" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Max Requests</label>
+        <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
     `
 };
 
@@ -4127,6 +4136,214 @@ function setupHueControls() {
     });
 }
 
+function setupHermesControls() {
+    document.addEventListener("click", async (e) => {
+        // Toggle prompt expansion
+        const togglePromptBtn = e.target.closest(".hermes-toggle-prompt-btn");
+        if (togglePromptBtn) {
+            const wrapper = togglePromptBtn.closest(".hermes-prompt-wrapper");
+            if (wrapper) {
+                const preview = wrapper.querySelector(".hermes-prompt-preview");
+                const full = wrapper.querySelector(".hermes-prompt-full");
+                const chevron = togglePromptBtn.querySelector(".hermes-toggle-chevron");
+                const label = togglePromptBtn.querySelector(".hermes-toggle-label");
+                const isOpen = full.style.display !== "none";
+                if (isOpen) {
+                    full.style.display = "none";
+                    if (preview) preview.style.display = "";
+                    if (chevron) chevron.style.transform = "rotate(0deg)";
+                    if (label) label.textContent = "Details";
+                } else {
+                    full.style.display = "block";
+                    if (preview) preview.style.display = "none";
+                    if (chevron) chevron.style.transform = "rotate(180deg)";
+                    if (label) label.textContent = "Less";
+                }
+            }
+            return;
+        }
+
+        // Toggle edit mode
+        const editToggleBtn = e.target.closest(".hermes-edit-toggle-btn");
+        if (editToggleBtn) {
+            const card = editToggleBtn.closest(".hermes-card");
+            if (card) {
+                const viewMode = card.querySelector(".hermes-card-view");
+                const editMode = card.querySelector(".hermes-card-edit");
+                if (viewMode && editMode) {
+                    viewMode.style.display = "none";
+                    editMode.style.display = "block";
+                }
+            }
+            return;
+        }
+
+        // Cancel edit mode
+        const cancelBtn = e.target.closest(".hermes-cancel-btn");
+        if (cancelBtn) {
+            const card = cancelBtn.closest(".hermes-card");
+            if (card) {
+                const viewMode = card.querySelector(".hermes-card-view");
+                const editMode = card.querySelector(".hermes-card-edit");
+                if (viewMode && editMode) {
+                    editMode.style.display = "none";
+                    viewMode.style.display = "block";
+                }
+            }
+            return;
+        }
+
+        // Action: Approve or Reject
+        const actionBtn = e.target.closest(".hermes-approve-btn, .hermes-reject-btn");
+        if (actionBtn) {
+            const reqId = actionBtn.getAttribute("data-hermes-id");
+            const action = actionBtn.getAttribute("data-hermes-action");
+            const card = actionBtn.closest(".hermes-card");
+            const container = actionBtn.closest(".hermes-container");
+            const apiUrl = container ? container.getAttribute("data-api-url") : "";
+
+            if (!reqId || !action || !card) return;
+
+            card.style.opacity = "0.4";
+            card.style.pointerEvents = "none";
+            card.style.transition = "all 0.3s ease";
+
+            try {
+                const res = await fetch("/api/hermes/action", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        request_id: reqId,
+                        action: action,
+                        api_url: apiUrl
+                    })
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(errText || "Action failed");
+                }
+
+                card.style.transform = "scale(0.95)";
+                card.style.height = card.offsetHeight + "px";
+                card.style.overflow = "hidden";
+                setTimeout(() => {
+                    card.style.height = "0";
+                    card.style.padding = "0";
+                    card.style.margin = "0";
+                    card.style.border = "none";
+                    card.style.opacity = "0";
+                    setTimeout(() => {
+                        card.remove();
+                        updateHermesBadgeCount(container);
+                    }, 300);
+                }, 100);
+
+                showToast(action === "approve" ? "Command approved" : "Command rejected", "success");
+            } catch (err) {
+                console.error(err);
+                showToast("Hermes: " + err.message, "error");
+                card.style.opacity = "1";
+                card.style.pointerEvents = "";
+            }
+            return;
+        }
+
+        // Action: Save & Approve (from edit mode)
+        const saveBtn = e.target.closest(".hermes-save-btn");
+        if (saveBtn) {
+            const reqId = saveBtn.getAttribute("data-hermes-id");
+            const card = saveBtn.closest(".hermes-card");
+            const container = saveBtn.closest(".hermes-container");
+            const apiUrl = container ? container.getAttribute("data-api-url") : "";
+
+            if (!reqId || !card) return;
+
+            const titleInput = card.querySelector(".hermes-edit-title");
+            const promptInput = card.querySelector(".hermes-edit-prompt");
+            const titleVal = titleInput ? titleInput.value.trim() : "";
+            const promptVal = promptInput ? promptInput.value.trim() : "";
+
+            card.style.opacity = "0.4";
+            card.style.pointerEvents = "none";
+            card.style.transition = "all 0.3s ease";
+
+            try {
+                const res = await fetch("/api/hermes/action", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        request_id: reqId,
+                        action: "edit",
+                        title: titleVal,
+                        prompt: promptVal,
+                        api_url: apiUrl
+                    })
+                });
+
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(errText || "Action failed");
+                }
+
+                card.style.transform = "scale(0.95)";
+                card.style.height = card.offsetHeight + "px";
+                card.style.overflow = "hidden";
+                setTimeout(() => {
+                    card.style.height = "0";
+                    card.style.padding = "0";
+                    card.style.margin = "0";
+                    card.style.border = "none";
+                    card.style.opacity = "0";
+                    setTimeout(() => {
+                        card.remove();
+                        updateHermesBadgeCount(container);
+                    }, 300);
+                }, 100);
+
+                showToast("Command edited and approved", "success");
+            } catch (err) {
+                console.error(err);
+                showToast("Hermes: " + err.message, "error");
+                card.style.opacity = "1";
+                card.style.pointerEvents = "";
+            }
+            return;
+        }
+    });
+}
+
+function updateHermesBadgeCount(container) {
+    if (!container) return;
+    const cards = container.querySelectorAll(".hermes-card");
+    const badge = container.querySelector(".hermes-count-badge");
+    const headerStatus = container.querySelector(".hermes-header-status");
+    const cardsList = container.querySelector(".hermes-cards-list");
+
+    if (cards.length === 0) {
+        if (headerStatus) headerStatus.style.display = "none";
+        if (cardsList) cardsList.style.display = "none";
+        
+        if (!container.querySelector(".hermes-empty-state")) {
+            const emptyDiv = document.createElement("div");
+            emptyDiv.className = "hermes-empty-state";
+            emptyDiv.innerHTML = `
+                <div class="hermes-empty-icon">
+                    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                    </svg>
+                </div>
+                <div class="hermes-empty-title">All clear</div>
+                <div class="hermes-empty-sub">No commands or actions awaiting approval</div>
+            `;
+            container.appendChild(emptyDiv);
+        }
+    } else if (badge) {
+        badge.textContent = `${cards.length} pending`;
+    }
+}
+
 /**
  * Appends a single RSS Feed input card with URL, Title, and collapsible Advanced settings.
  */
@@ -4819,6 +5036,7 @@ async function setupPage() {
 
     setupSpotifyControls();
     setupHueControls();
+    setupHermesControls();
     setupWebSockets();
 }
 

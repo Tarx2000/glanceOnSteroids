@@ -3,9 +3,11 @@ package widget
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/glanceapp/glance/internal/feed"
 )
@@ -13,6 +15,9 @@ import (
 // TestNeuralWattWidgetQuotaView verifies that the NeuralWatt widget correctly handles
 // the "quota" view option, fetching from the /v1/quota endpoint and computing stats.
 func TestNeuralWattWidgetQuotaView(t *testing.T) {
+	tStart := time.Now().AddDate(0, 0, -5)
+	tEnd := time.Now().AddDate(0, 0, 25)
+
 	// 1. Setup local mock HTTP server to return the quota API response
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/quota" {
@@ -52,8 +57,8 @@ func TestNeuralWattWidgetQuotaView(t *testing.T) {
 				"plan":                 "Basic",
 				"status":               "active",
 				"billing_interval":     "month",
-				"current_period_start": "2026-06-18T00:00:00Z",
-				"current_period_end":   "2026-07-18T00:00:00Z",
+				"current_period_start": tStart.Format(time.RFC3339),
+				"current_period_end":   tEnd.Format(time.RFC3339),
 				"auto_renew":           true,
 				"kwh_included":         6.0,
 				"kwh_used":             0.563,
@@ -118,7 +123,7 @@ func TestNeuralWattWidgetQuotaView(t *testing.T) {
 	}
 
 	// Verify formatted billing period
-	expectedBillingPeriod := "18.06.2026 – 18.07.2026"
+	expectedBillingPeriod := fmt.Sprintf("%02d.%02d.%04d – %02d.%02d.%04d", tStart.Day(), int(tStart.Month()), tStart.Year(), tEnd.Day(), int(tEnd.Month()), tEnd.Year())
 	if nwWidget.QuotaBillingPeriodStr != expectedBillingPeriod {
 		t.Errorf("expected billing period %q, got: %q", expectedBillingPeriod, nwWidget.QuotaBillingPeriodStr)
 	}

@@ -50,6 +50,7 @@ var (
 	MVVTemplate                   = compileTemplate("mvv.html", "widget-base.html")
 	GmailTemplate                 = compileTemplate("gmail.html", "widget-base.html")
 	HueTemplate                   = compileTemplate("hue.html", "widget-base.html")
+	HermesApproveTemplate         = compileTemplate("hermes-approve.html", "widget-base.html")
 )
 
 var globalTemplateFunctions = template.FuncMap{

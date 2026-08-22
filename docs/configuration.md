@@ -21,6 +21,7 @@
   - [Twitch Channels](#twitch-channels)
   - [Twitch Top Games](#twitch-top-games)
   - [iframe](#iframe)
+  - [Hermes Approvals](#hermes-approvals)
 
 ## Intro
 Configuration is done via a single YAML file and a server restart is required in order for any changes to take effect. Trying to start the server with an invalid config file will result in an error.
@@ -1137,3 +1138,35 @@ The source of the iframe.
 
 ##### `height`
 The height of the iframe. The minimum allowed height is 50.
+
+### Hermes Approvals
+View and approve side-effecting commands and queued requests from your Hermes Agent.
+
+Example:
+
+```yaml
+- type: hermes-approve
+  title: Hermes Approvals
+  api-url: http://localhost:3000
+  api-key: ${HERMES_API_KEY}
+  limit: 10
+  cache: 15s
+```
+
+#### Properties
+| Name | Type | Required | Default |
+| ---- | ---- | -------- | ------- |
+| `api-url` | string | no | `http://localhost:3000` |
+| `api-key` | string | no | |
+| `limit` | integer | no | 10 |
+| `cache` | string | no | `15s` |
+| `hide-title` | boolean | no | `false` |
+
+##### `api-url`
+The URL of your Hermes Agent / Mission Control instance (e.g. `http://localhost:3000` or `http://hermes:3000`).
+
+##### `api-key`
+Optional API key or Bearer token for authenticating requests with your Hermes instance. You can reference environment variables using `${VAR_NAME}`.
+
+##### `limit`
+Maximum number of pending approval requests to display. Defaults to 10.
