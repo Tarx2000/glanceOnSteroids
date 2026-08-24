@@ -23,7 +23,7 @@ func init() {
 }
 
 func (widget *HermesApprove) Initialize() error {
-	widget.withTitle("Hermes Approvals").withCacheDuration(15 * time.Second)
+	widget.withTitle("Hermes Approvals").withCacheDuration(5 * time.Second)
 
 	if widget.ApiUrl == "" {
 		widget.ApiUrl = "http://localhost:3000"
@@ -33,6 +33,20 @@ func (widget *HermesApprove) Initialize() error {
 	}
 
 	return nil
+}
+
+func (widget *HermesApprove) RemoveRequest(id string) {
+	widget.Lock()
+	defer widget.Unlock()
+
+	filtered := make([]feed.HermesRequest, 0, len(widget.Requests))
+	for _, req := range widget.Requests {
+		if req.ID != id {
+			filtered = append(filtered, req)
+		}
+	}
+	widget.Requests = filtered
+	widget.PendingCount = len(filtered)
 }
 
 func (widget *HermesApprove) Update(ctx context.Context, services ExternalServiceProvider) {

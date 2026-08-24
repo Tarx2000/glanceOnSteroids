@@ -154,8 +154,8 @@ func FetchHermesPendingRequests(ctx context.Context, apiURL string, apiKey strin
 	return nil, fmt.Errorf("failed to parse hermes response: %s", truncateString(string(bodyBytes), 200))
 }
 
-// PerformHermesAction sends an approval, rejection, or edited approval to the Hermes API.
-func PerformHermesAction(ctx context.Context, apiURL, apiKey, reqID, action, title, prompt string) error {
+// PerformHermesAction sends an approval or rejection decision to the Hermes API.
+func PerformHermesAction(ctx context.Context, apiURL, apiKey, reqID, action string) error {
 	if apiURL == "" {
 		apiURL = "http://localhost:3000"
 	}
@@ -165,16 +165,13 @@ func PerformHermesAction(ctx context.Context, apiURL, apiKey, reqID, action, tit
 		return fmt.Errorf("request ID is required")
 	}
 
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "approve" && action != "reject" {
+		return fmt.Errorf("invalid action %q: must be approve or reject", action)
+	}
+
 	payload := map[string]any{
 		"action": action,
-	}
-	if action == "edit" {
-		if title != "" {
-			payload["title"] = title
-		}
-		if prompt != "" {
-			payload["prompt"] = prompt
-		}
 	}
 
 	jsonBytes, err := json.Marshal(payload)
@@ -183,27 +180,43 @@ func PerformHermesAction(ctx context.Context, apiURL, apiKey, reqID, action, tit
 	}
 
 	endpoint := fmt.Sprintf("%s/api/hermes/requests/%s", apiURL, url.PathEscape(reqID))
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	setHeaders := func(req *http.Request) {
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		if apiKey != "" {
+			if strings.HasPrefix(apiKey, "Bearer ") {
+				req.Header.Set("Authorization", apiKey)
+			} else {
+				req.Header.Set("Authorization", "Bearer "+apiKey)
+			}
+		}
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, endpoint, bytes.NewReader(jsonBytes))
 	if err != nil {
 		return fmt.Errorf("failed to create patch request: %w", err)
 	}
+	setHeaders(req)
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	if apiKey != "" {
-		if strings.HasPrefix(apiKey, "Bearer ") {
-			req.Header.Set("Authorization", apiKey)
-		} else {
-			req.Header.Set("Authorization", "Bearer "+apiKey)
-		}
-	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send action to Hermes API: %w", err)
 	}
 	defer resp.Body.Close()
+
+	// If PATCH is not allowed (405), fallback to POST
+	if resp.StatusCode == http.StatusMethodNotAllowed {
+		reqPost, errPost := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBytes))
+		if errPost == nil {
+			setHeaders(reqPost)
+			if respPost, errPostClient := client.Do(reqPost); errPostClient == nil {
+				defer respPost.Body.Close()
+				resp = respPost
+			}
+		}
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		bodyBytes, _ := io.ReadAll(resp.Body)

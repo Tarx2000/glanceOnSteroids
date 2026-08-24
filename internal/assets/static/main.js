@@ -1451,7 +1451,7 @@ const defaultCacheDurations = {
     mvv: "2m",
     gmail: "10m",
     hue: "1m",
-    "hermes-approve": "15s"
+    "hermes-approve": "5s"
 };
 
 function parseDurationToHoursMinutes(durationStr) {
@@ -4163,36 +4163,6 @@ function setupHermesControls() {
             return;
         }
 
-        // Toggle edit mode
-        const editToggleBtn = e.target.closest(".hermes-edit-toggle-btn");
-        if (editToggleBtn) {
-            const card = editToggleBtn.closest(".hermes-card");
-            if (card) {
-                const viewMode = card.querySelector(".hermes-card-view");
-                const editMode = card.querySelector(".hermes-card-edit");
-                if (viewMode && editMode) {
-                    viewMode.style.display = "none";
-                    editMode.style.display = "block";
-                }
-            }
-            return;
-        }
-
-        // Cancel edit mode
-        const cancelBtn = e.target.closest(".hermes-cancel-btn");
-        if (cancelBtn) {
-            const card = cancelBtn.closest(".hermes-card");
-            if (card) {
-                const viewMode = card.querySelector(".hermes-card-view");
-                const editMode = card.querySelector(".hermes-card-edit");
-                if (viewMode && editMode) {
-                    editMode.style.display = "none";
-                    viewMode.style.display = "block";
-                }
-            }
-            return;
-        }
-
         // Action: Approve or Reject
         const actionBtn = e.target.closest(".hermes-approve-btn, .hermes-reject-btn");
         if (actionBtn) {
@@ -4201,6 +4171,7 @@ function setupHermesControls() {
             const card = actionBtn.closest(".hermes-card");
             const container = actionBtn.closest(".hermes-container");
             const apiUrl = container ? container.getAttribute("data-api-url") : "";
+            const pageSlug = window.location.pathname.replace(/^\/|\/$/g, "") || "home";
 
             if (!reqId || !action || !card) return;
 
@@ -4215,7 +4186,8 @@ function setupHermesControls() {
                     body: JSON.stringify({
                         request_id: reqId,
                         action: action,
-                        api_url: apiUrl
+                        api_url: apiUrl,
+                        page: pageSlug
                     })
                 });
 
@@ -4240,68 +4212,6 @@ function setupHermesControls() {
                 }, 100);
 
                 showToast(action === "approve" ? "Command approved" : "Command rejected", "success");
-            } catch (err) {
-                console.error(err);
-                showToast("Hermes: " + err.message, "error");
-                card.style.opacity = "1";
-                card.style.pointerEvents = "";
-            }
-            return;
-        }
-
-        // Action: Save & Approve (from edit mode)
-        const saveBtn = e.target.closest(".hermes-save-btn");
-        if (saveBtn) {
-            const reqId = saveBtn.getAttribute("data-hermes-id");
-            const card = saveBtn.closest(".hermes-card");
-            const container = saveBtn.closest(".hermes-container");
-            const apiUrl = container ? container.getAttribute("data-api-url") : "";
-
-            if (!reqId || !card) return;
-
-            const titleInput = card.querySelector(".hermes-edit-title");
-            const promptInput = card.querySelector(".hermes-edit-prompt");
-            const titleVal = titleInput ? titleInput.value.trim() : "";
-            const promptVal = promptInput ? promptInput.value.trim() : "";
-
-            card.style.opacity = "0.4";
-            card.style.pointerEvents = "none";
-            card.style.transition = "all 0.3s ease";
-
-            try {
-                const res = await fetch("/api/hermes/action", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        request_id: reqId,
-                        action: "edit",
-                        title: titleVal,
-                        prompt: promptVal,
-                        api_url: apiUrl
-                    })
-                });
-
-                if (!res.ok) {
-                    const errText = await res.text();
-                    throw new Error(errText || "Action failed");
-                }
-
-                card.style.transform = "scale(0.95)";
-                card.style.height = card.offsetHeight + "px";
-                card.style.overflow = "hidden";
-                setTimeout(() => {
-                    card.style.height = "0";
-                    card.style.padding = "0";
-                    card.style.margin = "0";
-                    card.style.border = "none";
-                    card.style.opacity = "0";
-                    setTimeout(() => {
-                        card.remove();
-                        updateHermesBadgeCount(container);
-                    }, 300);
-                }, 100);
-
-                showToast("Command edited and approved", "success");
             } catch (err) {
                 console.error(err);
                 showToast("Hermes: " + err.message, "error");

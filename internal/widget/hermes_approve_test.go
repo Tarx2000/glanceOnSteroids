@@ -38,6 +38,9 @@ func TestHermesApproveWidget(t *testing.T) {
 	if hw.ApiUrl != "http://localhost:3000" {
 		t.Errorf("expected default ApiUrl 'http://localhost:3000', got '%s'", hw.ApiUrl)
 	}
+	if hw.CacheDuration != 5*time.Second {
+		t.Errorf("expected default cache duration 5s, got %v", hw.CacheDuration)
+	}
 
 	// 2. Test YAML decoding
 	yamlConfig := `
@@ -46,7 +49,7 @@ title: My Agent Approvals
 api-url: http://127.0.0.1:3000
 api-key: secret-token-123
 limit: 5
-cache: 30s
+cache: 10s
 `
 	var decoded HermesApprove
 	if err := yaml.Unmarshal([]byte(yamlConfig), &decoded); err != nil {
@@ -67,8 +70,8 @@ cache: 30s
 	if decoded.Limit != 5 {
 		t.Errorf("expected limit 5, got %d", decoded.Limit)
 	}
-	if decoded.CacheDuration != 30*time.Second {
-		t.Errorf("expected CacheDuration 30s, got %v", decoded.CacheDuration)
+	if decoded.CacheDuration != 10*time.Second {
+		t.Errorf("expected CacheDuration 10s, got %v", decoded.CacheDuration)
 	}
 
 	// 3. Test mock HTTP server for pending requests and actions
@@ -143,17 +146,28 @@ cache: 30s
 	if !strings.Contains(html, "data-hermes-action=\"approve\"") {
 		t.Errorf("rendered HTML missing approve button: %s", html)
 	}
+	if !strings.Contains(html, "data-hermes-action=\"reject\"") {
+		t.Errorf("rendered HTML missing reject button: %s", html)
+	}
 
-	// 6. Test empty state render
-	hw.Requests = nil
-	hw.PendingCount = 0
+	// 6. Test RemoveRequest in-memory
+	hw.RemoveRequest("req-1")
+	if len(hw.Requests) != 1 || hw.PendingCount != 1 {
+		t.Errorf("expected 1 request after RemoveRequest, got %d (pending %d)", len(hw.Requests), hw.PendingCount)
+	}
+	if hw.Requests[0].ID != "req-2" {
+		t.Errorf("expected remaining request to be req-2, got %s", hw.Requests[0].ID)
+	}
+
+	// 7. Test empty state render
+	hw.RemoveRequest("req-2")
 	emptyHtml := string(hw.Render())
 	if !strings.Contains(emptyHtml, "All clear") {
 		t.Errorf("rendered HTML missing empty state: %s", emptyHtml)
 	}
 
-	// 7. Test perform actions (approve, reject, edit)
-	err = feed.PerformHermesAction(context.Background(), mockServer.URL, "", "req-1", "approve", "", "")
+	// 8. Test perform actions (approve, reject)
+	err = feed.PerformHermesAction(context.Background(), mockServer.URL, "", "req-1", "approve")
 	if err != nil {
 		t.Fatalf("failed to perform approve action: %v", err)
 	}
@@ -161,11 +175,11 @@ cache: 30s
 		t.Errorf("expected action 'approve', got %v", actionReceived["action"])
 	}
 
-	err = feed.PerformHermesAction(context.Background(), mockServer.URL, "", "req-1", "edit", "New Title", "New Prompt")
+	err = feed.PerformHermesAction(context.Background(), mockServer.URL, "", "req-2", "reject")
 	if err != nil {
-		t.Fatalf("failed to perform edit action: %v", err)
+		t.Fatalf("failed to perform reject action: %v", err)
 	}
-	if actionReceived["action"] != "edit" || actionReceived["title"] != "New Title" || actionReceived["prompt"] != "New Prompt" {
-		t.Errorf("expected edit payload with title and prompt, got %v", actionReceived)
+	if actionReceived["action"] != "reject" {
+		t.Errorf("expected action 'reject', got %v", actionReceived["action"])
 	}
 }

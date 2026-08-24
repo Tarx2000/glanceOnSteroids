@@ -31,7 +31,6 @@
                 <span class="hermes-time">{{ .TimeAgo }}</span>
             </div>
 
-            <!-- View mode -->
             <div class="hermes-card-view">
                 <div class="hermes-card-title">{{ .Title }}</div>
                 {{ if .Prompt }}
@@ -62,36 +61,6 @@
                             <line x1="6" y1="6" x2="18" y2="18"></line>
                         </svg>
                         <span>Reject</span>
-                    </button>
-                    <button type="button" class="hermes-action-btn hermes-edit-toggle-btn" data-hermes-id="{{ .ID }}" title="Edit command before approving">
-                        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                        </svg>
-                        <span>Edit</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Edit mode (initially hidden) -->
-            <div class="hermes-card-edit" style="display: none;">
-                <div class="hermes-edit-field">
-                    <label class="hermes-edit-label">Title</label>
-                    <input type="text" class="hermes-edit-input hermes-edit-title" value="{{ .Title }}" />
-                </div>
-                <div class="hermes-edit-field">
-                    <label class="hermes-edit-label">Prompt / Command</label>
-                    <textarea class="hermes-edit-textarea hermes-edit-prompt" rows="4">{{ .Prompt }}</textarea>
-                </div>
-                <div class="hermes-actions-row">
-                    <button type="button" class="hermes-action-btn hermes-save-btn" data-hermes-id="{{ .ID }}">
-                        <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                        <span>Save & Approve</span>
-                    </button>
-                    <button type="button" class="hermes-action-btn hermes-cancel-btn" data-hermes-id="{{ .ID }}">
-                        <span>Cancel</span>
                     </button>
                 </div>
             </div>

@@ -1150,7 +1150,7 @@ Example:
   api-url: http://localhost:3000
   api-key: ${HERMES_API_KEY}
   limit: 10
-  cache: 15s
+  cache: 5s
 ```
 
 #### Properties
@@ -1159,7 +1159,7 @@ Example:
 | `api-url` | string | no | `http://localhost:3000` |
 | `api-key` | string | no | |
 | `limit` | integer | no | 10 |
-| `cache` | string | no | `15s` |
+| `cache` | string | no | `5s` |
 | `hide-title` | boolean | no | `false` |
 
 ##### `api-url`
@@ -1170,3 +1170,11 @@ Optional API key or Bearer token for authenticating requests with your Hermes in
 
 ##### `limit`
 Maximum number of pending approval requests to display. Defaults to 10.
+
+##### Real-time Push Webhook
+Hermes (or an external cron/bridge) can push updates into Glance instantly with zero latency by triggering:
+
+```bash
+curl -X POST http://localhost:8080/api/hermes/notify
+```
+This forces an immediate refresh and pushes real-time WebSocket updates to all active browser dashboards.

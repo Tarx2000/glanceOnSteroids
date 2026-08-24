@@ -24,7 +24,7 @@ var buildNumber = "1"
 
 // BackgroundWidgetUpdateInterval is the duration between automatic background widget updates
 // when at least one client is connected via WebSocket.
-var BackgroundWidgetUpdateInterval = 30 * time.Second
+var BackgroundWidgetUpdateInterval = 5 * time.Second
 
 var sequentialWhitespacePattern = regexp.MustCompile(`\s+`)
 var sequentialHyphenPattern = regexp.MustCompile(`-+`)
@@ -292,8 +292,10 @@ func (a *Application) Serve() error {
 	mux.HandleFunc("POST /api/spotify/skip", a.HandleSpotifySkip)
 	mux.HandleFunc("POST /api/spotify/volume", a.HandleSpotifyVolume)
 
-	// Hermes Agent approval actions
+	// Hermes Agent approval actions & push notifications
 	mux.HandleFunc("POST /api/hermes/action", a.HandleHermesAction)
+	mux.HandleFunc("POST /api/hermes/notify", a.HandleHermesNotify)
+	mux.HandleFunc("GET /api/hermes/notify", a.HandleHermesNotify)
 
 	// Layout and widget configuration API endpoints
 	mux.HandleFunc("POST /api/layout/save", a.HandleLayoutSave)
