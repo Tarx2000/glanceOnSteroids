@@ -1172,9 +1172,12 @@ Optional API key or Bearer token for authenticating requests with your Hermes in
 Maximum number of pending approval requests to display. Defaults to 10.
 
 ##### Real-time Push Webhook
-Hermes (or an external cron/bridge) can push updates into Glance instantly with zero latency by triggering:
+An external bridge can push updates into Glance instantly with zero polling delay by triggering the authenticated endpoint:
 
 ```bash
-curl -X POST http://localhost:8080/api/hermes/notify
+curl -X POST \
+  -H "Authorization: Bearer ${HERMES_APPROVAL_API_KEY}" \
+  http://localhost:8080/api/hermes/notify
 ```
-This forces an immediate refresh and pushes real-time WebSocket updates to all active browser dashboards.
+
+The bearer token must match an `api-key` configured on a Hermes Approve widget. The endpoint forces an immediate refresh and pushes real-time WebSocket updates to all active browser dashboards. GET requests and missing or invalid tokens are rejected. The current Hermes approval API exposes authenticated reads and decisions, but does not emit outbound notify calls by itself; use a bridge if automatic push delivery is required.

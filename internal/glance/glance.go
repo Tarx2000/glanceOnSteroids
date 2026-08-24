@@ -292,10 +292,9 @@ func (a *Application) Serve() error {
 	mux.HandleFunc("POST /api/spotify/skip", a.HandleSpotifySkip)
 	mux.HandleFunc("POST /api/spotify/volume", a.HandleSpotifyVolume)
 
-	// Hermes Agent approval actions & push notifications
+	// Hermes Agent approval actions & authenticated push notifications
 	mux.HandleFunc("POST /api/hermes/action", a.HandleHermesAction)
 	mux.HandleFunc("POST /api/hermes/notify", a.HandleHermesNotify)
-	mux.HandleFunc("GET /api/hermes/notify", a.HandleHermesNotify)
 
 	// Layout and widget configuration API endpoints
 	mux.HandleFunc("POST /api/layout/save", a.HandleLayoutSave)

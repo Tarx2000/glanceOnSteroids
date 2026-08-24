@@ -2,10 +2,10 @@ package glance
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +40,6 @@ func (a *Application) hermesAPIKeyForURL(apiURL string) string {
 	a.configMu.RLock()
 	defer a.configMu.RUnlock()
 
-	var fallbackKey string
 	for _, page := range a.slugToPage {
 		if page == nil {
 			continue
@@ -52,25 +51,43 @@ func (a *Application) hermesAPIKeyForURL(apiURL string) string {
 				if hwURL == targetURL && string(hw.ApiKey) != "" {
 					return string(hw.ApiKey)
 				}
-				if fallbackKey == "" && string(hw.ApiKey) != "" {
-					fallbackKey = string(hw.ApiKey)
-				}
 			}
 		}
 	}
 
-	if fallbackKey != "" {
-		return fallbackKey
-	}
-
-	if envKey := os.Getenv("HERMES_API_KEY"); envKey != "" {
-		return envKey
-	}
-	if envKey := os.Getenv("HERMES_KEY"); envKey != "" {
-		return envKey
-	}
-
 	return ""
+}
+
+func (a *Application) hermesWebhookAuthorized(r *http.Request) bool {
+	scheme, token, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(token) == "" {
+		return false
+	}
+	token = strings.TrimSpace(token)
+
+	a.configMu.RLock()
+	defer a.configMu.RUnlock()
+
+	for _, page := range a.slugToPage {
+		if page == nil {
+			continue
+		}
+		for _, wd := range page.GetFlatWidgets() {
+			hw, ok := wd.(*widget.HermesApprove)
+			if !ok {
+				continue
+			}
+			expected := strings.TrimSpace(string(hw.ApiKey))
+			if strings.HasPrefix(strings.ToLower(expected), "bearer ") {
+				expected = strings.TrimSpace(expected[len("Bearer "):])
+			}
+			if expected != "" && hmac.Equal([]byte(token), []byte(expected)) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // HandleHermesAction executes an approval or rejection on a pending Hermes request.
@@ -100,7 +117,9 @@ func (a *Application) HandleHermesAction(w http.ResponseWriter, r *http.Request)
 	}
 
 	apiURL := payload.ApiUrl
-	apiKey := payload.ApiKey
+	// Keep accepting api_key for request-shape compatibility, but never trust a
+	// browser-supplied credential. The configured widget key is authoritative.
+	apiKey := ""
 
 	// If apiURL is not provided directly, try looking it up from the widget configuration
 	if apiURL == "" && payload.PageSlug != "" {
@@ -195,6 +214,15 @@ func (a *Application) HandleHermesAction(w http.ResponseWriter, r *http.Request)
 // When triggered, it forces an immediate update of all Hermes widgets and broadcasts real-time
 // WebSocket updates to all active browser sessions.
 func (a *Application) HandleHermesNotify(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !a.hermesWebhookAuthorized(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	slog.Info("[Hermes] Push notification received, triggering real-time widget refresh")
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)

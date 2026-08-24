@@ -47,7 +47,7 @@ func TestHermesApproveWidget(t *testing.T) {
 type: hermes-approve
 title: My Agent Approvals
 api-url: http://127.0.0.1:3000
-api-key: secret-token-123
+api-key: test-token-123
 limit: 5
 cache: 10s
 `
@@ -64,8 +64,8 @@ cache: 10s
 	if decoded.ApiUrl != "http://127.0.0.1:3000" {
 		t.Errorf("expected ApiUrl 'http://127.0.0.1:3000', got '%s'", decoded.ApiUrl)
 	}
-	if decoded.ApiKey != "secret-token-123" {
-		t.Errorf("expected ApiKey 'secret-token-123', got '%s'", decoded.ApiKey)
+	if decoded.ApiKey != "test-token-123" {
+		t.Errorf("expected ApiKey 'test-token-123', got '%s'", decoded.ApiKey)
 	}
 	if decoded.Limit != 5 {
 		t.Errorf("expected limit 5, got %d", decoded.Limit)
@@ -148,6 +148,9 @@ cache: 10s
 	}
 	if !strings.Contains(html, "data-hermes-action=\"reject\"") {
 		t.Errorf("rendered HTML missing reject button: %s", html)
+	}
+	if strings.Contains(html, "data-hermes-action=\"edit\"") || strings.Contains(html, "Save & Approve") {
+		t.Errorf("rendered HTML still exposes unsupported edit action: %s", html)
 	}
 
 	// 6. Test RemoveRequest in-memory
