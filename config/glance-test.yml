@@ -1,0 +1,9 @@
+server:
+  host: ""
+  port: 8080
+pages:
+  - name: Home
+    columns:
+      - size: small
+        widgets:
+          - type: server-stats

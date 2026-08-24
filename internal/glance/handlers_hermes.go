@@ -11,15 +11,45 @@ import (
 )
 
 type HermesActionRequest struct {
-	PageSlug   string `json:"page"`
-	Column     string `json:"column"`
-	WidgetIdx  int    `json:"widget"`
-	RequestID  string `json:"request_id"`
-	Action     string `json:"action"` // approve | reject | edit
-	Title      string `json:"title,omitempty"`
-	Prompt     string `json:"prompt,omitempty"`
-	ApiUrl     string `json:"api_url,omitempty"`
-	ApiKey     string `json:"api_key,omitempty"`
+	PageSlug  string `json:"page"`
+	Column    string `json:"column"`
+	WidgetIdx int    `json:"widget"`
+	RequestID string `json:"request_id"`
+	Action    string `json:"action"` // approve | reject | edit
+	Title     string `json:"title,omitempty"`
+	Prompt    string `json:"prompt,omitempty"`
+	ApiUrl    string `json:"api_url,omitempty"`
+	ApiKey    string `json:"api_key,omitempty"`
+}
+
+func normalizeHermesAPIURL(rawURL string) string {
+	return strings.TrimRight(strings.TrimSpace(rawURL), "/")
+}
+
+// hermesAPIKeyForURL resolves the key server-side so it never needs to be
+// exposed in the widget DOM or sent back from the browser.
+func (a *Application) hermesAPIKeyForURL(apiURL string) string {
+	targetURL := normalizeHermesAPIURL(apiURL)
+	if targetURL == "" {
+		return ""
+	}
+
+	a.configMu.RLock()
+	defer a.configMu.RUnlock()
+
+	for _, page := range a.slugToPage {
+		if page == nil {
+			continue
+		}
+		for _, wd := range page.GetFlatWidgets() {
+			hw, ok := wd.(*widget.HermesApprove)
+			if ok && normalizeHermesAPIURL(string(hw.ApiUrl)) == targetURL {
+				return string(hw.ApiKey)
+			}
+		}
+	}
+
+	return ""
 }
 
 // HandleHermesAction executes an action (approve, reject, edit) on a pending Hermes request.
@@ -50,6 +80,9 @@ func (a *Application) HandleHermesAction(w http.ResponseWriter, r *http.Request)
 
 	apiURL := payload.ApiUrl
 	apiKey := payload.ApiKey
+	if apiKey == "" && apiURL != "" {
+		apiKey = a.hermesAPIKeyForURL(apiURL)
+	}
 
 	// If apiURL is not provided directly, try looking it up from the widget configuration
 	if apiURL == "" && payload.PageSlug != "" {

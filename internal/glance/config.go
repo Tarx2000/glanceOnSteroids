@@ -57,6 +57,11 @@ func NewConfigFromYml(contents io.Reader) (*Config, error) {
 		return nil, err
 	}
 
+	// Force Docker-friendly server settings; ignore whatever is in glance.yml
+	// to prevent deployments from being broken by overwritten configs.
+	config.Server.Host = ""
+	config.Server.Port = 8080
+
 	if err = configIsValid(config); err != nil {
 		return nil, err
 	}
