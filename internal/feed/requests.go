@@ -11,8 +11,23 @@ import (
 	"time"
 )
 
+var SharedTransport = &http.Transport{
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 20,
+	IdleConnTimeout:     90 * time.Second,
+}
+
 var defaultClient = &http.Client{
-	Timeout: 5 * time.Second,
+	Transport: SharedTransport,
+	Timeout:   5 * time.Second,
+}
+
+// NewPooledClient returns an http.Client using the shared transport with the specified timeout.
+func NewPooledClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: SharedTransport,
+		Timeout:   timeout,
+	}
 }
 
 type RequestDoer interface {
@@ -43,13 +58,8 @@ func decodeJsonFromRequest[T any](client RequestDoer, request *http.Request) (T,
 
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
-
-	if err != nil {
-		return result, err
-	}
-
 	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
 		return result, fmt.Errorf(
 			"unexpected status code %d for %s, response: %s",
 			response.StatusCode,
@@ -58,9 +68,7 @@ func decodeJsonFromRequest[T any](client RequestDoer, request *http.Request) (T,
 		)
 	}
 
-	err = json.Unmarshal(body, &result)
-
-	if err != nil {
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
 		return result, err
 	}
 
@@ -85,13 +93,8 @@ func decodeXmlFromRequest[T any](client RequestDoer, request *http.Request) (T, 
 
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
-
-	if err != nil {
-		return result, err
-	}
-
 	if response.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(response.Body, 1024))
 		return result, fmt.Errorf(
 			"unexpected status code %d for %s, response: %s",
 			response.StatusCode,
@@ -100,9 +103,7 @@ func decodeXmlFromRequest[T any](client RequestDoer, request *http.Request) (T, 
 		)
 	}
 
-	err = xml.Unmarshal(body, &result)
-
-	if err != nil {
+	if err := xml.NewDecoder(response.Body).Decode(&result); err != nil {
 		return result, err
 	}
 

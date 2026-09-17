@@ -455,8 +455,22 @@ func (a *Application) reloadConfig() error {
 			oldWidgets := oldPage.GetFlatWidgets()
 			newWidgets := newPage.GetFlatWidgets()
 
-			// Track matched old widgets to prevent duplicate matching.
-			matched := make(map[widget.Widget]bool)
+			type preMarshaledWidget struct {
+				w    widget.Widget
+				yaml string
+				used bool
+			}
+			marshaledOld := make([]preMarshaledWidget, 0, len(oldWidgets))
+			for _, ow := range oldWidgets {
+				owYaml, err := yaml.Marshal(ow)
+				if err == nil {
+					marshaledOld = append(marshaledOld, preMarshaledWidget{
+						w:    ow,
+						yaml: string(owYaml),
+						used: false,
+					})
+				}
+			}
 
 			for _, nw := range newWidgets {
 				// Marshal new widget config to YAML to get a normalized config string.
@@ -464,21 +478,13 @@ func (a *Application) reloadConfig() error {
 				if err != nil {
 					continue
 				}
+				nwYamlStr := string(nwYaml)
 
 				// Search for a matching old widget that hasn't been matched yet.
-				for _, ow := range oldWidgets {
-					if matched[ow] {
-						continue
-					}
-
-					owYaml, err := yaml.Marshal(ow)
-					if err != nil {
-						continue
-					}
-
-					if string(nwYaml) == string(owYaml) {
-						widget.CopyWidgetState(ow, nw)
-						matched[ow] = true
+				for j := range marshaledOld {
+					if !marshaledOld[j].used && marshaledOld[j].yaml == nwYamlStr {
+						widget.CopyWidgetState(marshaledOld[j].w, nw)
+						marshaledOld[j].used = true
 						break
 					}
 				}
@@ -512,10 +518,13 @@ func (a *Application) reloadConfig() error {
 
 	widget.GlobalTimezone = config.Server.Timezone
 
-	for i := range config.Pages {
-		page := &config.Pages[i]
-		page.UpdateOutdatedWidgets(a.Hub)
-	}
+	// Asynchronously update widgets in background so reloadConfig returns immediately (<50ms)
+	go func() {
+		for i := range config.Pages {
+			page := &config.Pages[i]
+			page.UpdateOutdatedWidgets(a.Hub)
+		}
+	}()
 
 	return nil
 }

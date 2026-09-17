@@ -23,10 +23,11 @@ type SettingsStore interface {
 	SetSetting(key, value string) error
 }
 
-// SQLiteStore implements SettingsStore using a SQLite database backend.
+// SQLiteStore implements SettingsStore using a SQLite database backend with an in-memory read cache.
 type SQLiteStore struct {
-	db *sql.DB
-	mu sync.Mutex
+	db    *sql.DB
+	mu    sync.RWMutex
+	cache map[string]string
 }
 
 func (s *SQLiteStore) SetSetting(key, value string) error {
@@ -40,23 +41,49 @@ func (s *SQLiteStore) SetSetting(key, value string) error {
 		VALUES (?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 	`, key, value)
+	if err == nil {
+		if s.cache == nil {
+			s.cache = make(map[string]string)
+		}
+		s.cache[key] = value
+	}
 	return err
 }
 
 func (s *SQLiteStore) GetSetting(key, defaultValue string) (string, error) {
+	s.mu.RLock()
+	if s.cache != nil {
+		if val, ok := s.cache[key]; ok {
+			s.mu.RUnlock()
+			return val, nil
+		}
+	}
+	s.mu.RUnlock()
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.db == nil {
 		return defaultValue, fmt.Errorf("database not initialized")
 	}
+	// Double check cache after acquiring write lock
+	if s.cache != nil {
+		if val, ok := s.cache[key]; ok {
+			return val, nil
+		}
+	} else {
+		s.cache = make(map[string]string)
+	}
+
 	var value string
 	err := s.db.QueryRow("SELECT value FROM settings WHERE key = ?;", key).Scan(&value)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			s.cache[key] = defaultValue
 			return defaultValue, nil
 		}
 		return defaultValue, err
 	}
+	s.cache[key] = value
 	return value, nil
 }
 
@@ -113,7 +140,7 @@ func initDB(configPath string) error {
 	}
 
 	dbInstance = db
-	Store = &SQLiteStore{db: db}
+	Store = &SQLiteStore{db: db, cache: make(map[string]string)}
 	return nil
 }
 

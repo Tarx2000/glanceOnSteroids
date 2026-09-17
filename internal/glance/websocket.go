@@ -24,6 +24,7 @@ type Client struct {
 	page      string
 	send      chan []byte
 	mu        sync.Mutex
+	closed    bool
 	closeOnce sync.Once
 }
 
@@ -37,9 +38,28 @@ func (c *Client) WriteMessage(messageType int, data []byte) error {
 
 func (c *Client) safeClose() {
 	c.closeOnce.Do(func() {
+		c.mu.Lock()
+		c.closed = true
 		close(c.send)
+		c.mu.Unlock()
 		c.conn.Close()
 	})
+}
+
+// Send attempts to send data to the client channel in a thread-safe, non-blocking manner.
+// Returns false if the client is closed or the channel buffer is full.
+func (c *Client) Send(data []byte) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return false
+	}
+	select {
+	case c.send <- data:
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *Client) writePump() {
@@ -141,9 +161,7 @@ func (h *Hub) BroadcastMessage(msgType string, data interface{}) {
 
 	var failed []*Client
 	for _, client := range clients {
-		select {
-		case client.send <- msgBytes:
-		default:
+		if !client.Send(msgBytes) {
 			failed = append(failed, client)
 		}
 	}

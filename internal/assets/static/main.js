@@ -312,7 +312,11 @@ function setupCarousels() {
 
         const determineSideCutoffsRateLimited = throttledDebounce(determineSideCutoffs, 20, 100);
 
-        itemsContainer.addEventListener("scroll", determineSideCutoffsRateLimited);
+        if (itemsContainer._carouselScrollHandler) {
+            itemsContainer.removeEventListener("scroll", itemsContainer._carouselScrollHandler);
+        }
+        itemsContainer._carouselScrollHandler = determineSideCutoffsRateLimited;
+        itemsContainer.addEventListener("scroll", determineSideCutoffsRateLimited, { passive: true });
         
         // Use ResizeObserver instead of window resize listener to avoid listener leaks on window
         const resizeObserver = new ResizeObserver(() => {
@@ -444,7 +448,7 @@ function setupDynamicRelativeTime() {
 }
 
 function setupLazyImages() {
-    const images = document.querySelectorAll("img[loading=lazy]");
+    const images = document.querySelectorAll("img[loading=lazy]:not([data-lazy-processed])");
 
     if (images.length == 0) {
         return;
@@ -456,6 +460,7 @@ function setupLazyImages() {
 
     for (let i = 0; i < images.length; i++) {
         const image = images[i];
+        image.dataset.lazyProcessed = "true";
 
         if (image.complete) {
             image.classList.add("cached");
@@ -464,7 +469,7 @@ function setupLazyImages() {
             image.addEventListener("load", () => {
                 image.classList.add("loaded");
                 setTimeout(() => imageFinishedTransition(image), 500);
-            });
+            }, { once: true });
         }
     }
 }
@@ -1030,8 +1035,6 @@ function enableWidgetsDraggability(enabled) {
                     handle.addEventListener("pointerdown", function(e) { startPointerDrag(e, w); });
                     header.insertBefore(handle, header.firstChild);
                 }
-            } else {
-                existingHandle.addEventListener("pointerdown", function(e) { startPointerDrag(e, w); });
             }
 
             const existingActions = w.querySelector(".widget-edit-actions");
@@ -1047,7 +1050,7 @@ function enableWidgetsDraggability(enabled) {
                     editBtn.className = "widget-edit-btn";
                     editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>`;
                     editBtn.title = "Edit Widget Settings";
-                    editBtn.style.cssText = "background: none; border: none; color: var(--color-primary); cursor: pointer; padding: 4px; line-height: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; transition: color 0.2s, background 0.2s;";
+                    editBtn.style.cssText = "background: none; border: none; color: var(--color-primary); cursor: pointer; min-width: 32px; min-height: 32px; padding: 4px; line-height: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; transition: color 0.2s, background 0.2s;";
                     editBtn.addEventListener("click", (e) => {
                         e.stopPropagation();
                         e.preventDefault();
@@ -1062,7 +1065,7 @@ function enableWidgetsDraggability(enabled) {
                     deleteBtn.className = "widget-delete-btn";
                     deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`;
                     deleteBtn.title = "Delete Widget";
-                    deleteBtn.style.cssText = "background: none; border: none; color: var(--color-negative); cursor: pointer; padding: 4px; line-height: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; transition: color 0.2s, background 0.2s;";
+                    deleteBtn.style.cssText = "background: none; border: none; color: var(--color-negative); cursor: pointer; min-width: 32px; min-height: 32px; padding: 4px; line-height: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 4px; transition: color 0.2s, background 0.2s;";
                     deleteBtn.addEventListener("click", async (e) => {
                         e.stopPropagation();
                         e.preventDefault();
@@ -1080,34 +1083,6 @@ function enableWidgetsDraggability(enabled) {
                     actionsDiv.appendChild(editBtn);
                     actionsDiv.appendChild(deleteBtn);
                     header.appendChild(actionsDiv);
-                }
-            } else {
-                const editBtn = existingActions.querySelector(".widget-edit-btn");
-                if (editBtn) {
-                    editBtn.addEventListener("click", (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        const col = w.dataset.originalCol;
-                        const idx = parseInt(w.dataset.originalIdx);
-                        const nestedIdx = w.dataset.originalNestedIdx !== undefined ? parseInt(w.dataset.originalNestedIdx) : undefined;
-                        openEditWidgetModal(col, idx, nestedIdx);
-                    });
-                }
-                const deleteBtn = existingActions.querySelector(".widget-delete-btn");
-                if (deleteBtn) {
-                    deleteBtn.addEventListener("click", async (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        const titleEl = w.querySelector(".uppercase");
-                        const title = titleEl ? titleEl.innerText : "Widget";
-                        if (await showConfirmModal(`Are you sure you want to delete the "${title}" widget?`)) {
-                            if (w.dataset.originalNestedIdx !== undefined) {
-                                await deleteWidget(`${w.dataset.originalCol}:${w.dataset.originalIdx}`, parseInt(w.dataset.originalNestedIdx));
-                            } else {
-                                await deleteWidget(w.dataset.originalCol, parseInt(w.dataset.originalIdx));
-                            }
-                        }
-                    });
                 }
             }
         } else {
@@ -2074,6 +2049,9 @@ function setupAddWidgetModal() {
         modal.style.display = "flex";
         document.body.style.overflow = "hidden";
         setModalOpen(true);
+        if (typeSearch) {
+            setTimeout(() => typeSearch.focus(), 50);
+        }
     };
 
     const hideModal = () => {
@@ -3170,6 +3148,20 @@ function setupClocks() {
     if (!window.clockIntervalInitialized) {
         window.clockIntervalInitialized = true;
         window.clockIntervalId = setInterval(updateClocks, 1000);
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                if (window.clockIntervalId) {
+                    clearInterval(window.clockIntervalId);
+                    window.clockIntervalId = null;
+                }
+            } else {
+                updateClocks();
+                if (!window.clockIntervalId) {
+                    window.clockIntervalId = setInterval(updateClocks, 1000);
+                }
+            }
+        });
     }
 }
 
@@ -3253,6 +3245,7 @@ async function refreshWidget(col, idx, nestedIdx) {
         const newWidgetEl = tempDiv.firstChild;
         
         if (newWidgetEl) {
+            newWidgetEl.classList.add("widget-fade-in");
             widgetEl.replaceWith(newWidgetEl);
             
             // Re-assign coordinate data attributes to the new element
@@ -4427,6 +4420,11 @@ async function openEditWidgetModal(col, idx, nestedIdx) {
 
         modal.style.display = "flex";
         document.body.style.overflow = "hidden";
+        setModalOpen(true);
+        const firstInput = fieldsContainer.querySelector("input:not([type=hidden]), select, textarea");
+        if (firstInput) {
+            setTimeout(() => firstInput.focus(), 50);
+        }
     } catch (err) {
         showToast("Failed to fetch widget details: " + err.message, "error");
     }
@@ -5170,9 +5168,7 @@ document.addEventListener("pointermove", function(e) {
         window.scrollBy(0, scrollSpeed);
     }
 
-    dragGhost.style.display = "none";
     var elementUnder = document.elementFromPoint(e.clientX, e.clientY);
-    dragGhost.style.display = "";
 
     if (!elementUnder) return;
 
@@ -5253,4 +5249,47 @@ document.addEventListener("pointerup", function(e) {
 
 document.addEventListener("pointercancel", function() {
     cancelPointerDrag();
+});
+
+// Global keyboard shortcuts (Escape to dismiss open modals/overlays)
+document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") {
+        // 1. Check prompt / confirm modals
+        const confirmOverlays = document.querySelectorAll(".confirm-modal-overlay");
+        if (confirmOverlays.length > 0) {
+            const lastOverlay = confirmOverlays[confirmOverlays.length - 1];
+            const cancelBtn = lastOverlay.querySelector(".confirm-modal-cancel");
+            if (cancelBtn) {
+                cancelBtn.click();
+                return;
+            }
+        }
+        // 2. Check Add Widget modal
+        const addModal = document.getElementById("add-widget-modal");
+        if (addModal && addModal.style.display !== "none") {
+            const cancelBtn = document.getElementById("btn-modal-cancel");
+            if (cancelBtn) {
+                cancelBtn.click();
+                return;
+            }
+        }
+        // 3. Check Edit Widget modal
+        const editModal = document.getElementById("edit-widget-modal");
+        if (editModal && editModal.style.display !== "none") {
+            const cancelBtn = document.getElementById("btn-edit-modal-cancel");
+            if (cancelBtn) {
+                cancelBtn.click();
+                return;
+            }
+        }
+        // 4. Check Settings modal
+        const settingsModal = document.getElementById("settings-modal");
+        if (settingsModal && settingsModal.style.display !== "none") {
+            const cancelBtn = document.getElementById("btn-settings-cancel");
+            if (cancelBtn) {
+                cancelBtn.click();
+                return;
+            }
+        }
+    }
 });

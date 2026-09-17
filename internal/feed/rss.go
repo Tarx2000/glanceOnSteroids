@@ -85,7 +85,7 @@ func getItemsFromRSSFeedTask(request RSSFeedRequest) ([]RSSFeedItem, error) {
 
 	// If custom headers are provided, execute the request manually using http.Client
 	if len(request.Headers) > 0 {
-		client := &http.Client{Timeout: 5 * time.Second}
+		client := NewPooledClient(5 * time.Second)
 		req, err := http.NewRequestWithContext(ctx, "GET", request.Url, nil)
 		if err != nil {
 			return nil, err
