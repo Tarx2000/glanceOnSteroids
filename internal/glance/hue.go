@@ -81,7 +81,7 @@ func getHueAccessToken() (string, error) {
 	data := url.Values{}
 	data.Set("refresh_token", refreshToken)
 
-	tokenURL := "https://api.meethue.com/oauth2/refresh?grant_type=refresh_token"
+	tokenURL := "https://api.meethue.com/oauth2/token?grant_type=refresh_token"
 	req, err := http.NewRequest("POST", tokenURL, strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", err
