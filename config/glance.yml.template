@@ -53,6 +53,11 @@ pages:
           #   api-key: YOUR_OPENROUTER_API_KEY_HERE
           #   update-interval: 5
 
+          # - type: openai-codex
+          #   title: OpenAI Codex Quota
+          #   auth-file: ~/.codex/auth.json
+
+
 spotify:
   # Optional: Configure Spotify integration
   # client-id: YOUR_SPOTIFY_CLIENT_ID

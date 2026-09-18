@@ -22,6 +22,7 @@
   - [Twitch Top Games](#twitch-top-games)
   - [iframe](#iframe)
   - [Hermes Approvals](#hermes-approvals)
+  - [OpenAI Codex Quota](#openai-codex-quota)
 
 ## Intro
 Configuration is done via a single YAML file and a server restart is required in order for any changes to take effect. Trying to start the server with an invalid config file will result in an error.
@@ -1181,3 +1182,53 @@ curl -X POST \
 ```
 
 The bearer token must match an `api-key` configured on a Hermes Approve widget. The endpoint forces an immediate refresh and pushes real-time WebSocket updates to all active browser dashboards. GET requests and missing or invalid tokens are rejected. The current Hermes approval API exposes authenticated reads and decisions, but does not emit outbound notify calls by itself; use a bridge if automatic push delivery is required.
+
+### OpenAI Codex Quota
+Monitor rate limits, session/weekly quota usage headroom, reset countdowns, and credit balance for OpenAI Codex and ChatGPT subscriptions.
+
+Example:
+
+```yaml
+- type: openai-codex
+  title: OpenAI Codex Quota
+  auth-file: ~/.codex/auth.json
+  # token: ${OPENAI_CODEX_TOKEN}
+  show-session-limit: true
+  show-weekly-limit: true
+  show-credits: true
+  cache: 5m
+```
+
+#### Properties
+| Name | Type | Required | Default |
+| ---- | ---- | -------- | ------- |
+| `token` | string | no | |
+| `auth-file` | string | no | `~/.codex/auth.json` |
+| `account-id` | string | no | |
+| `endpoint` | string | no | `https://chatgpt.com/backend-api/wham/usage` |
+| `show-session-limit` | boolean | no | `true` |
+| `show-weekly-limit` | boolean | no | `true` |
+| `show-credits` | boolean | no | `true` |
+| `cache` | string | no | `5m` |
+| `hide-title` | boolean | no | `false` |
+
+##### `token`
+Direct Bearer access token for authentication. Can reference environment variables like `${OPENAI_CODEX_TOKEN}`. If omitted, Glance will automatically read credentials from `auth-file`.
+
+##### `auth-file`
+Path to the local Codex CLI authentication file. Defaults to `~/.codex/auth.json`. Supports tilde expansion (`~`).
+
+##### `account-id`
+Optional ChatGPT account ID passed via the `ChatGPT-Account-Id` header. If left blank, it is automatically extracted from the auth file if available.
+
+##### `endpoint`
+The usage telemetry API endpoint. Defaults to `https://chatgpt.com/backend-api/wham/usage`.
+
+##### `show-session-limit`
+Whether to show the primary rate-limit window (typically 5-hour session quota) with progress bar and reset countdown.
+
+##### `show-weekly-limit`
+Whether to show the secondary rate-limit window (typically 7-day weekly quota) with progress bar and reset countdown.
+
+##### `show-credits`
+Whether to display account credit balance if available.

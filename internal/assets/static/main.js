@@ -1426,7 +1426,8 @@ const defaultCacheDurations = {
     mvv: "2m",
     gmail: "10m",
     hue: "1m",
-    "hermes-approve": "5s"
+    "hermes-approve": "5s",
+    "openai-codex": "5m"
 };
 
 function parseDurationToHoursMinutes(durationStr) {
@@ -1984,6 +1985,25 @@ const widgetFieldTemplates = {
         <input type="password" name="api-key" placeholder="Optional secret token / key" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 10px;" />
         <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Max Requests</label>
         <input type="number" name="limit" value="10" min="1" max="100" required style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none;" />
+    `,
+    "openai-codex": `
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Codex Access Token (optional if using auth file)</label>
+        <input type="password" name="token" placeholder="Optional Bearer token or \${OPENAI_CODEX_TOKEN}" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Auth File Path</label>
+        <input type="text" name="auth-file" placeholder="~/.codex/auth.json (default)" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">Account ID (optional)</label>
+        <input type="text" name="account-id" placeholder="Optional ChatGPT account ID" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+
+        <label style="display: block; margin-bottom: 5px; font-size: 0.9em; opacity: 0.85;">API Endpoint</label>
+        <input type="text" name="endpoint" placeholder="https://chatgpt.com/backend-api/wham/usage" value="https://chatgpt.com/backend-api/wham/usage" style="width: 100%; padding: 8px; background: var(--color-background); border: 1px solid var(--color-widget-content-border); border-radius: 4px; color: inherit; font-family: inherit; outline: none; margin-bottom: 12px;" />
+
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 4px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-session-limit" checked /> Show Session Limit (5-Hour Window)</label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-weekly-limit" checked /> Show Weekly Limit (7-Day Window)</label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.85em; cursor: pointer;"><input type="checkbox" name="show-credits" checked /> Show Credit Balance</label>
+        </div>
     `
 };
 
@@ -2219,6 +2239,18 @@ function setupAddWidgetModal() {
         const hideSwapInput = form.elements["hide-swap"];
         if (hideSwapInput) {
             properties["hide-swap"] = hideSwapInput.checked;
+        }
+        const showSessionLimitInput = form.elements["show-session-limit"];
+        if (showSessionLimitInput) {
+            properties["show-session-limit"] = showSessionLimitInput.checked;
+        }
+        const showWeeklyLimitInput = form.elements["show-weekly-limit"];
+        if (showWeeklyLimitInput) {
+            properties["show-weekly-limit"] = showWeeklyLimitInput.checked;
+        }
+        const showCreditsInput = form.elements["show-credits"];
+        if (showCreditsInput) {
+            properties["show-credits"] = showCreditsInput.checked;
         }
 
         const type = typeSelect.value;
@@ -4563,6 +4595,18 @@ function setupEditWidgetModal() {
         const hideSwapInput = form.elements["hide-swap"];
         if (hideSwapInput) {
             properties["hide-swap"] = hideSwapInput.checked;
+        }
+        const showSessionLimitInput = form.elements["show-session-limit"];
+        if (showSessionLimitInput) {
+            properties["show-session-limit"] = showSessionLimitInput.checked;
+        }
+        const showWeeklyLimitInput = form.elements["show-weekly-limit"];
+        if (showWeeklyLimitInput) {
+            properties["show-weekly-limit"] = showWeeklyLimitInput.checked;
+        }
+        const showCreditsInput = form.elements["show-credits"];
+        if (showCreditsInput) {
+            properties["show-credits"] = showCreditsInput.checked;
         }
 
         // Dynamic lists collector for editing a widget

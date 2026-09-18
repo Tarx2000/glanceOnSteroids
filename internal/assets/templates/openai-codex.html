@@ -1,0 +1,56 @@
+{{ template "widget-base.html" . }}
+
+{{ define "widget-content" }}
+<div class="codex-widget">
+    <div class="codex-header-row">
+        <div class="codex-badges">
+            <span class="codex-plan-badge {{ .PlanBadgeClass }}">{{ .PlanType }}</span>
+            <span class="codex-status-badge {{ .StatusClass }}">{{ .StatusText }}</span>
+        </div>
+        {{ if and .DisplayCredits .HasCredits }}
+        <div class="codex-credits-pill">
+            <span class="codex-credits-label">Balance</span>
+            <span class="codex-credits-val">{{ .CreditBalance }}</span>
+        </div>
+        {{ end }}
+    </div>
+
+    {{ if and .DisplaySessionLimit .HasPrimary }}
+    <div class="codex-metric-card">
+        <div class="codex-metric-header">
+            <span class="codex-metric-title">{{ .PrimaryWindowLabel }}</span>
+            <span class="codex-metric-pct">{{ printf "%.0f%%" .PrimaryLeftPct }} left</span>
+        </div>
+        <div class="codex-progress-track">
+            <div class="codex-progress-bar {{ .PrimaryProgressClass }}" style="width: {{ printf "%.1f" .PrimaryLeftPct }}%;"></div>
+        </div>
+        <div class="codex-metric-footer">
+            <span class="codex-metric-used">{{ printf "%.1f%%" .PrimaryUsedPct }} used</span>
+            <span class="codex-metric-reset">{{ .PrimaryResetDesc }}</span>
+        </div>
+    </div>
+    {{ end }}
+
+    {{ if and .DisplayWeeklyLimit .HasSecondary }}
+    <div class="codex-metric-card">
+        <div class="codex-metric-header">
+            <span class="codex-metric-title">{{ .SecondaryWindowLabel }}</span>
+            <span class="codex-metric-pct">{{ printf "%.0f%%" .SecondaryLeftPct }} left</span>
+        </div>
+        <div class="codex-progress-track">
+            <div class="codex-progress-bar {{ .SecondaryProgressClass }}" style="width: {{ printf "%.1f" .SecondaryLeftPct }}%;"></div>
+        </div>
+        <div class="codex-metric-footer">
+            <span class="codex-metric-used">{{ printf "%.1f%%" .SecondaryUsedPct }} used</span>
+            <span class="codex-metric-reset">{{ .SecondaryResetDesc }}</span>
+        </div>
+    </div>
+    {{ end }}
+
+    {{ if and (not .HasPrimary) (not .HasSecondary) }}
+    <div class="codex-empty-notice">
+        No active quota telemetry reported yet. Send a request in Codex to initialize usage tracking.
+    </div>
+    {{ end }}
+</div>
+{{ end }}
